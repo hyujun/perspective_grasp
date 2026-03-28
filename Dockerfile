@@ -1,12 +1,14 @@
 # =============================================================================
-# perspective_grasp - 6D Pose Estimation & Manipulation System
-# Multi-stage Docker build: Ubuntu 24.04 + ROS 2 Jazzy + CUDA 12.4
+# perspective_grasp - ML Node Base Image
+# Shared base for GPU-heavy Python ML nodes that need dependency isolation.
+# Host runs: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO
+# Docker runs: FoundationPose, MegaPose/CosyPose, SAM2, BundleSDF
 # =============================================================================
 
 # ---------------------------------------------------------------------------
-# Stage 1: Base — OS + CUDA + ROS 2 Jazzy
+# Stage 1: ros-ml-base — CUDA + ROS 2 Jazzy (minimal, no desktop)
 # ---------------------------------------------------------------------------
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04 AS base
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04 AS ros-ml-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
@@ -15,7 +17,7 @@ ENV ROS_DISTRO=jazzy
 
 SHELL ["/bin/bash", "-c"]
 
-# ---- ROS 2 Jazzy repository setup ----
+# ---- ROS 2 Jazzy repository ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl gnupg2 lsb-release software-properties-common ca-certificates \
     && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
@@ -25,108 +27,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         > /etc/apt/sources.list.d/ros2.list \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Core system + ROS 2 packages ----
+# ---- ROS 2 base (rclpy only, no desktop/rviz — host handles GUI) ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        # ROS 2 Jazzy desktop (includes rclcpp, rclpy, rviz2, etc.)
-        ros-jazzy-desktop \
-        # Build tools
+        ros-jazzy-ros-base \
         python3-colcon-common-extensions \
-        python3-rosdep \
         python3-pip \
         build-essential \
         cmake \
         git \
-        # ROS 2 additional packages
-        ros-jazzy-tf2-ros \
-        ros-jazzy-tf2-eigen \
-        ros-jazzy-tf2-sensor-msgs \
-        ros-jazzy-tf2-geometry-msgs \
-        ros-jazzy-rclcpp-action \
-        ros-jazzy-rclcpp-lifecycle \
         ros-jazzy-cv-bridge \
-        ros-jazzy-pcl-conversions \
-        ros-jazzy-message-filters \
+        ros-jazzy-tf2-ros \
+        ros-jazzy-tf2-geometry-msgs \
         ros-jazzy-image-transport \
-        ros-jazzy-diagnostic-msgs \
-        # System libraries
-        libfmt-dev \
-        libpcl-dev \
-        libeigen3-dev \
-        libopencv-dev \
-        libopenmpi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- rosdep init ----
-RUN rosdep init || true && rosdep update --rosdistro=$ROS_DISTRO
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /etc/bash.bashrc
 
 # ---------------------------------------------------------------------------
-# Stage 2: Dependencies — TEASER++, manif, GTSAM (from source / PPA)
+# perception_msgs — build just the message package so ML nodes can use it
 # ---------------------------------------------------------------------------
-FROM base AS deps
+FROM ros-ml-base AS msgs-builder
 
-# ---- TEASER++ ----
-RUN git clone --depth 1 https://github.com/MIT-SPARK/TEASER-plusplus.git /tmp/teaser \
-    && cd /tmp/teaser && mkdir build && cd build \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DBUILD_TESTS=OFF \
-                -DBUILD_PYTHON_BINDINGS=OFF \
-                -DBUILD_DOC=OFF \
-    && make -j"$(nproc)" && make install && ldconfig \
-    && rm -rf /tmp/teaser
+RUN mkdir -p /ws/src
+COPY perception_msgs /ws/src/perception_msgs
 
-# ---- manif (header-only SE(3) library) ----
-RUN git clone --depth 1 https://github.com/artivis/manif.git /tmp/manif \
-    && cd /tmp/manif && mkdir build && cd build \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF \
-    && make install \
-    && rm -rf /tmp/manif
-
-# ---- GTSAM ----
-RUN add-apt-repository -y ppa:borglab/gtsam-release-4.2 \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends libgtsam-dev libgtsam-unstable-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# ---- Ceres Solver (optional, for multi_camera_calibration joint optimization) ----
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libceres-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# ---------------------------------------------------------------------------
-# Stage 3: Python ML packages
-# ---------------------------------------------------------------------------
-FROM deps AS ml
-
-RUN pip3 install --no-cache-dir --break-system-packages \
-        ultralytics
-
-# ---------------------------------------------------------------------------
-# Stage 4: Workspace
-# ---------------------------------------------------------------------------
-FROM ml AS workspace
-
-# Create workspace structure matching CLAUDE.md paths
-RUN mkdir -p /home/junho/ros2_ws/perspective_ws/src
-
-WORKDIR /home/junho/ros2_ws/perspective_ws/src
-
-# Copy source (use .dockerignore to exclude build artifacts)
-COPY . perspective_grasp/
-
-# Build the workspace
-WORKDIR /home/junho/ros2_ws/perspective_ws
 RUN source /opt/ros/jazzy/setup.bash \
-    && colcon build \
-        --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-        --parallel-workers "$(( $(nproc) > 2 ? $(nproc) - 2 : 1 ))"
+    && cd /ws && colcon build --packages-select perception_msgs
 
 # ---------------------------------------------------------------------------
-# Runtime setup
+# Final base with msgs installed
 # ---------------------------------------------------------------------------
+FROM ros-ml-base AS ml-base
 
-# Source ROS 2 + workspace on every shell
-RUN echo "source /opt/ros/jazzy/setup.bash" >> /etc/bash.bashrc \
-    && echo "source /home/junho/ros2_ws/perspective_ws/install/setup.bash" >> /etc/bash.bashrc
+COPY --from=msgs-builder /ws/install /ws/install
 
-WORKDIR /home/junho/ros2_ws/perspective_ws
+RUN echo "source /ws/install/setup.bash" >> /etc/bash.bashrc
+
+WORKDIR /ws
 CMD ["bash"]
