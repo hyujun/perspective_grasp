@@ -1,0 +1,58 @@
+# =============================================================================
+# perspective_grasp - Docker Compose
+# Usage:
+#   docker compose up -d          # Start container
+#   docker compose exec pg bash   # Open shell
+#   docker compose down           # Stop
+# =============================================================================
+
+services:
+  pg:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: perspective_grasp
+
+    # --- GPU ---
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # --- ROS 2 DDS needs host network ---
+    network_mode: host
+    ipc: host
+
+    # --- USB devices (RealSense, cameras) ---
+    privileged: true
+    volumes:
+      # Source code bind mount (live editing without rebuild)
+      - ./:/home/junho/ros2_ws/perspective_ws/src/perspective_grasp
+      # Persist build artifacts across restarts
+      - pg_build:/home/junho/ros2_ws/perspective_ws/build
+      - pg_install:/home/junho/ros2_ws/perspective_ws/install
+      - pg_log:/home/junho/ros2_ws/perspective_ws/log
+      # Model weights (mount from host to avoid baking into image)
+      - ${MODELS_DIR:-./models}:/home/junho/ros2_ws/perspective_ws/src/perspective_grasp/models
+
+    # --- GUI / RViz2 support ---
+    environment:
+      - DISPLAY=${DISPLAY}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+
+    stdin_open: true
+    tty: true
+
+    command: bash
+
+volumes:
+  pg_build:
+  pg_install:
+  pg_log:
