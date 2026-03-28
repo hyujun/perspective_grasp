@@ -1,0 +1,74 @@
+# camera_config.yaml — 3-camera configuration (recommended)
+# This single file defines the entire camera topology.
+# All packages read this file; modify cameras list to switch 1/2/3 cam.
+
+perception_system:
+  ros__parameters:
+    base_frame: "ur5e_base_link"
+
+    cameras:
+      - id: 0
+        namespace: "/cam0"
+        type: "eye_in_hand"
+        serial: "SERIAL_CAM0"
+        role: "primary"
+        resolution: "640x480"
+        fps: 30
+        sync_mode: 0          # 0=default (independent)
+        ee_frame: "ur5e_tool0"
+        frame_id: "cam0_color_optical_frame"
+
+      - id: 1
+        namespace: "/cam1"
+        type: "eye_to_hand"
+        serial: "SERIAL_CAM1"
+        role: "secondary"
+        resolution: "640x480"
+        fps: 30
+        sync_mode: 1          # 1=master (eye-to-hand HW sync)
+        mount_position: "left"
+        frame_id: "cam1_color_optical_frame"
+        static_tf:
+          x: 0.5
+          y: 0.3
+          z: 0.8
+          roll: 0.0
+          pitch: 0.52
+          yaw: -0.78
+
+      - id: 2
+        namespace: "/cam2"
+        type: "eye_to_hand"
+        serial: "SERIAL_CAM2"
+        role: "secondary"
+        resolution: "640x480"
+        fps: 30
+        sync_mode: 2          # 2=slave
+        mount_position: "right"
+        frame_id: "cam2_color_optical_frame"
+        static_tf:
+          x: 0.5
+          y: -0.3
+          z: 0.8
+          roll: 0.0
+          pitch: 0.52
+          yaw: 0.78
+
+    # Association parameters
+    association:
+      distance_threshold: 0.05   # 5cm
+      lambda_rot: 0.1            # rotation weight in cost matrix
+      temporal_threshold: 0.10   # 10cm for temporal ID matching
+      max_snapshot_age_ms: 50.0
+      rate_hz: 30.0
+      stale_object_timeout_sec: 3.0
+
+    # Point cloud merge parameters
+    merge:
+      voxel_leaf_size: 0.002     # 2mm dedup
+      table_height: 0.0          # ur5e_base relative
+      max_object_height: 0.30    # 30cm
+      outlier_mean_k: 30
+      outlier_stddev: 1.5
+      overlap_radius: 0.005      # 5mm
+      sync_slop_ms: 5.0

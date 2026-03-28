@@ -1,0 +1,7 @@
+cosypose_optimizer:
+  ros__parameters:
+    model_dir: ""                    # path to CosyPose model weights
+    n_coarse_iterations: 1
+    n_refine_iterations: 4
+    n_pose_hypotheses: 5
+    bsz_objects: 16

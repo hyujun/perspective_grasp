@@ -1,0 +1,6 @@
+pose_graph_smoother:
+  ros__parameters:
+    window_size: 20
+    prior_noise_pos: 0.01          # m
+    prior_noise_rot: 0.05          # rad
+    camera_frame_id: camera_color_optical_frame

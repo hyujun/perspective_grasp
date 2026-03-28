@@ -1,0 +1,52 @@
+# camera_config_2cam.yaml — 2-camera configuration (eye-in-hand + eye-to-hand)
+
+perception_system:
+  ros__parameters:
+    base_frame: "ur5e_base_link"
+
+    cameras:
+      - id: 0
+        namespace: "/cam0"
+        type: "eye_in_hand"
+        serial: "SERIAL_CAM0"
+        role: "primary"
+        resolution: "640x480"
+        fps: 30
+        sync_mode: 0
+        ee_frame: "ur5e_tool0"
+        frame_id: "cam0_color_optical_frame"
+
+      - id: 1
+        namespace: "/cam1"
+        type: "eye_to_hand"
+        serial: "SERIAL_CAM1"
+        role: "secondary"
+        resolution: "640x480"
+        fps: 30
+        sync_mode: 0          # Single eye-to-hand, no HW sync needed
+        mount_position: "front"
+        frame_id: "cam1_color_optical_frame"
+        static_tf:
+          x: 0.5
+          y: 0.0
+          z: 0.8
+          roll: 0.0
+          pitch: 0.52
+          yaw: 0.0
+
+    association:
+      distance_threshold: 0.05
+      lambda_rot: 0.1
+      temporal_threshold: 0.10
+      max_snapshot_age_ms: 50.0
+      rate_hz: 30.0
+      stale_object_timeout_sec: 3.0
+
+    merge:
+      voxel_leaf_size: 0.002
+      table_height: 0.0
+      max_object_height: 0.30
+      outlier_mean_k: 30
+      outlier_stddev: 1.5
+      overlap_radius: 0.005
+      sync_slop_ms: 5.0

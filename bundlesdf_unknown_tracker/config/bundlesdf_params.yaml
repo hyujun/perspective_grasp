@@ -1,0 +1,10 @@
+bundlesdf_tracker:
+  ros__parameters:
+    near_plane: 0.1                  # meters
+    far_plane: 2.0                   # meters
+    sdf_resolution: 128
+    keyframe_interval: 5
+    bundle_adjust_iterations: 10
+    image_topic: /camera/color/image_raw
+    depth_topic: /camera/depth/image_rect_raw
+    camera_info_topic: /camera/color/camera_info

@@ -1,0 +1,6 @@
+charuco_board:
+  squares_x: 7
+  squares_y: 5
+  square_length: 0.04
+  marker_length: 0.03
+  dictionary: "DICT_6X6_250"

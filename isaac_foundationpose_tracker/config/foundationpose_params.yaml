@@ -1,0 +1,8 @@
+foundationpose_tracker:
+  ros__parameters:
+    mesh_dir: ""                     # path to object mesh directory
+    refine_iterations: 3
+    score_threshold: 0.5
+    image_topic: /camera/color/image_raw
+    depth_topic: /camera/depth/image_rect_raw
+    camera_info_topic: /camera/color/camera_info

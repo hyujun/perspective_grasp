@@ -1,0 +1,49 @@
+# ROS 2 build artifacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# ML models & weights
+*.pt
+*.onnx
+*.engine
+*.trt
+*.pth
+models/weights/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug recordings
+debug_recordings/
+*.mp4
+
+# Compiled objects
+*.o
+*.so
+*.a
+
+# Core dumps
+core
+core.*

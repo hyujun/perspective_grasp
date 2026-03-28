@@ -1,0 +1,24 @@
+yolo_pcl_cpp_tracker:
+  ros__parameters:
+    # Camera topics
+    detection_topic: /yolo/detections
+    cloud_topic: /camera/depth/points
+    camera_info_topic: /camera/depth/camera_info
+    camera_frame_id: camera_color_optical_frame
+
+    # ICP parameters
+    icp_max_iterations: 50
+    icp_transformation_epsilon: 1.0e-8
+    icp_fitness_epsilon: 1.0e-6
+    fitness_threshold: 0.001
+
+    # Point cloud preprocessing
+    voxel_leaf_size: 0.003
+    outlier_mean_k: 50
+    outlier_stddev: 1.0
+
+    # Tracking
+    max_lost_frames: 15
+
+    # CAD models directory (set to actual path)
+    model_dir: ""

@@ -1,0 +1,4 @@
+perception_meta_controller:
+  ros__parameters:
+    status_publish_rate_hz: 1.0
+    default_mode: NORMAL

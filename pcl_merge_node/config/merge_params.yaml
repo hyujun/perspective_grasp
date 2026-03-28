@@ -1,0 +1,14 @@
+pcl_merge_node:
+  ros__parameters:
+    source_topics:
+      - /cam1/camera/depth/points
+      - /cam2/camera/depth/points
+    target_frame: ur5e_base_link
+    voxel_leaf_size: 0.002
+    table_height: 0.0
+    max_object_height: 0.30
+    outlier_mean_k: 30
+    outlier_stddev: 1.5
+    overlap_radius: 0.005
+    sync_slop_ms: 5.0
+    sync_queue_size: 10

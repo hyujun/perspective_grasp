@@ -1,0 +1,5 @@
+# Switch perception pipeline mode
+string mode                              # NORMAL / HIGH_PRECISION / SCENE_ANALYSIS
+---
+bool success
+string active_pipeline

@@ -1,0 +1,10 @@
+cross_camera_associator:
+  ros__parameters:
+    camera_namespaces: ["/cam0", "/cam1", "/cam2"]
+    base_frame: "ur5e_base_link"
+    association_distance_threshold: 0.05
+    lambda_rot: 0.1
+    temporal_threshold: 0.10
+    max_snapshot_age_ms: 50.0
+    association_rate_hz: 30.0
+    stale_object_timeout_sec: 3.0

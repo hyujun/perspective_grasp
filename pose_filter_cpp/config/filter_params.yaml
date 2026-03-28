@@ -1,0 +1,18 @@
+pose_filter:
+  ros__parameters:
+    process_noise_pos: 0.001       # m/sqrt(s)
+    process_noise_rot: 0.01        # rad/sqrt(s)
+    process_noise_vel: 0.1
+    iekf_max_iterations: 3
+    mahalanobis_threshold: 16.81   # chi2(6, 0.01)
+    publish_rate_hz: 30.0
+    stale_timeout_sec: 2.0
+    output_frame_id: camera_color_optical_frame  # Use base_link for multi-cam
+    use_associated_input: true  # false = legacy 4-subscription mode
+
+    # Source weights (lower = more trusted, used in legacy mode)
+    source_weights:
+      yolo_tracker: 1.0
+      foundationpose: 0.3
+      megapose: 0.5
+      bundlesdf: 0.8

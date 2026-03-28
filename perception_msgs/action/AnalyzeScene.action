@@ -1,0 +1,13 @@
+# Goal - request scene-level pose optimization
+geometry_msgs/Point[] roi_points         # optional ROI polygon
+string[] target_classes                  # optional class filter
+---
+# Result
+perception_msgs/PoseWithMeta[] optimized_poses
+perception_msgs/ObjectRelation[] relations
+bool success
+string message
+---
+# Feedback
+float32 progress                         # 0.0 ~ 1.0
+string current_stage                     # coarse / refine / optimize

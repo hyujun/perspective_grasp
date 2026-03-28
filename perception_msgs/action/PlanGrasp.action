@@ -1,0 +1,16 @@
+# Goal - plan a grasp for a specific object
+int32 target_object_id
+string grasp_strategy                    # power / precision / pinch
+---
+# Result
+geometry_msgs/PoseStamped grasp_pose
+float64[] finger_joint_config            # 10-DoF joint angles
+geometry_msgs/PoseStamped[] approach_waypoints
+float32 grasp_quality_score
+bool success
+string message
+---
+# Feedback
+int32 num_candidates
+float32 best_score_so_far
+string current_stage                     # generation / feasibility / selection

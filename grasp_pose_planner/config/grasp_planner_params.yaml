@@ -1,0 +1,7 @@
+grasp_planner:
+  ros__parameters:
+    num_grasp_candidates: 100
+    antipodal_threshold: 0.7
+    collision_check: true
+    approach_distance: 0.10          # meters
+    gripper_width_max: 0.085         # meters
