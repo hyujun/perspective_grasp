@@ -1,5 +1,10 @@
 grasp_planner:
   ros__parameters:
+    # ── Planner selection ──────────────────────────────────────────────
+    # Available: antipodal  (add more in PLANNER_REGISTRY)
+    planner_type: "antipodal"
+
+    # ── Antipodal planner parameters ───────────────────────────────────
     num_grasp_candidates: 100
     antipodal_threshold: 0.7
     collision_check: true
