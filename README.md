@@ -140,15 +140,83 @@ RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulat
 - **Point cloud merge**: `pcl_merge_node` merges eye-to-hand depth clouds
 - **Calibration**: `multi_camera_calibration` with ChArUco + optional Ceres joint optimization
 
+## Prerequisites
+
+- **OS**: Ubuntu 24.04
+- **GPU**: NVIDIA GPU (CUDA 12.4+, 8GB+ VRAM recommended)
+- **ROS 2**: Jazzy Jalisco
+- **Docker**: Required for ML nodes (FoundationPose, SAM2, CosyPose, BundleSDF)
+
+## Installation
+
+### Option A: Fresh Ubuntu 24.04 Setup (Full)
+
+처음부터 환경을 구성하는 경우. NVIDIA 드라이버, CUDA, ROS 2, 모든 의존성, Docker를 한번에 설치합니다.
+
+```bash
+# 1. Clone the repository
+mkdir -p ~/ros2_ws/perspective_ws/src
+cd ~/ros2_ws/perspective_ws/src
+git clone https://github.com/hyujun/perspective_grasp.git
+
+# 2. Run the full host setup script
+cd perspective_grasp
+chmod +x scripts/install_host.sh
+./scripts/install_host.sh
+# ⚠ NVIDIA 드라이버가 새로 설치된 경우 리부팅 후 다시 실행
+```
+
+이 스크립트가 설치하는 항목:
+1. NVIDIA Driver 560 + CUDA Toolkit 12.4
+2. ROS 2 Jazzy Desktop
+3. ROS 2 패키지 (tf2, cv-bridge, pcl-conversions 등)
+4. C++ 라이브러리 (Eigen3, PCL, OpenCV, Ceres, TEASER++, manif)
+5. GTSAM (PPA)
+6. Python: ultralytics (YOLO)
+7. Docker + nvidia-container-toolkit
+
+### Option B: ROS 2 Jazzy Already Installed (Dependencies Only)
+
+ROS 2 Jazzy가 이미 설치된 환경에서 추가 의존성만 설치합니다.
+
+```bash
+cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+chmod +x scripts/install_dependencies.sh
+./scripts/install_dependencies.sh
+```
+
+### Docker Images (ML Nodes)
+
+GPU-heavy ML 노드(FoundationPose, CosyPose, SAM2, BundleSDF)는 Docker에서 실행됩니다.
+
+```bash
+cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+
+# Build all ML images
+docker compose build
+
+# (Optional) Model weights — 환경변수 또는 models/ 디렉토리에 배치
+export FOUNDATIONPOSE_WEIGHTS=/path/to/foundationpose/weights
+export SAM2_WEIGHTS=/path/to/sam2/weights
+export COSYPOSE_WEIGHTS=/path/to/cosypose/weights
+export BUNDLESDF_WEIGHTS=/path/to/bundlesdf/weights
+```
+
 ## Build
 
 ```bash
-cd /home/junho/ros2_ws/perspective_ws
+cd ~/ros2_ws/perspective_ws
 
 # Full build (respects dependency order)
 ./src/perspective_grasp/build.sh
 
-# Single package
+# Release build
+./src/perspective_grasp/build.sh Release
+
+# Clean build
+./src/perspective_grasp/build.sh --clean
+
+# Single package build
 colcon build --packages-select <package_name>
 
 # Source after build
@@ -161,6 +229,113 @@ source install/setup.bash
 2. `teaser_icp_hybrid_registrator` (library)
 3. `cross_camera_associator` + `pcl_merge_node` (multi-camera infrastructure)
 4. All remaining packages (parallel safe)
+
+## Running
+
+### Quick Start — Single Camera Perception
+
+```bash
+# Terminal 1: Source workspace
+cd ~/ros2_ws/perspective_ws
+source install/setup.bash
+
+# Launch full perception pipeline (YOLO tracker + pose filter + fusion + debug visualizer)
+ros2 launch yolo_pcl_cpp_tracker perception_system.launch.py
+```
+
+### Launch by Phase
+
+```bash
+source ~/ros2_ws/perspective_ws/install/setup.bash
+
+# Phase 1: Detection & Pose Estimation (per-camera)
+ros2 launch yolo_pcl_cpp_tracker tracker.launch.py
+
+# Phase 1 (multi-camera): Full Phase 1 bringup
+ros2 launch yolo_pcl_cpp_tracker phase1_bringup.launch.py
+
+# Phase 2: Multi-Camera Fusion
+ros2 launch cross_camera_associator associator.launch.py
+ros2 launch pcl_merge_node merge.launch.py
+
+# Phase 3: Filtering & Smoothing
+ros2 launch pose_filter_cpp pose_filter.launch.py
+ros2 launch pose_graph_smoother smoother.launch.py
+
+# Phase 5: Grasp Planning (Action Server)
+ros2 launch grasp_pose_planner grasp_planner.launch.py
+
+# Infrastructure
+ros2 launch perception_meta_controller meta_controller.launch.py
+ros2 launch perception_debug_visualizer debug_visualizer.launch.py
+ros2 launch multi_camera_calibration calibration_collect.launch.py
+```
+
+### Phase 4: ML Nodes (Docker)
+
+```bash
+cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+
+# Start individual ML service
+docker compose up foundationpose -d
+docker compose up sam2 -d
+docker compose up cosypose -d
+docker compose up bundlesdf -d
+
+# Start all ML nodes
+docker compose up -d
+
+# View logs
+docker compose logs -f foundationpose
+
+# Stop all
+docker compose down
+```
+
+### Camera Configuration
+
+카메라 수에 따라 config 파일을 지정합니다.
+
+```bash
+# 1-camera setup
+ros2 launch yolo_pcl_cpp_tracker perception_system.launch.py \
+    camera_config:=config/camera_config_1cam.yaml
+
+# 2-camera setup
+ros2 launch yolo_pcl_cpp_tracker perception_system.launch.py \
+    camera_config:=config/camera_config_2cam.yaml
+
+# 3-camera setup (default)
+ros2 launch yolo_pcl_cpp_tracker perception_system.launch.py \
+    camera_config:=config/camera_config.yaml
+```
+
+### Pipeline Modes
+
+`perception_meta_controller`를 통해 파이프라인 모드를 전환합니다.
+
+| Mode | Description | Active Nodes |
+|------|-------------|-------------|
+| **NORMAL** | Real-time tracking | YOLO tracker + ICP + pose filter |
+| **HIGH_PRECISION** | High-accuracy manipulation | NORMAL + FoundationPose + pose graph smoother |
+| **SCENE_ANALYSIS** | Scene understanding | YOLO tracker + SAM2 + CosyPose + pose filter |
+
+### Verifying the System
+
+```bash
+# Check running nodes
+ros2 node list
+
+# Check topics are being published
+ros2 topic list
+ros2 topic hz /cam0/yolo_tracker/raw_poses
+
+# Check TF tree
+ros2 run tf2_tools view_frames
+
+# Monitor pose output
+ros2 topic echo /pose_filter/filtered_poses
+```
 
 ## Key Topics
 
