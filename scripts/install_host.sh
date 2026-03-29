@@ -11,8 +11,16 @@
 #
 # What goes in Docker (see docker-compose.yml):
 #   - FoundationPose, MegaPose/CosyPose, SAM2, BundleSDF
+#
+# Usage:
+#   chmod +x scripts/install_host.sh
+#   ./scripts/install_host.sh
+#   # Reboot if NVIDIA driver was installed, then run again
 # =============================================================================
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "============================================================"
 echo " perspective_grasp - Host Environment Setup"
@@ -26,7 +34,8 @@ if ! nvidia-smi &>/dev/null; then
     echo "Installing NVIDIA driver..."
     sudo apt update
     sudo apt install -y nvidia-driver-560
-    echo "⚠  Reboot required after driver install. Run this script again after reboot."
+    echo ""
+    echo "** Reboot required after driver install. Run this script again after reboot. **"
     exit 0
 else
     echo "NVIDIA driver already installed: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
@@ -55,14 +64,17 @@ if [ ! -f /opt/ros/jazzy/setup.bash ]; then
         sudo tee /etc/apt/sources.list.d/ros2.list
     sudo apt update
     sudo apt install -y ros-jazzy-desktop
-    echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+    # Add ROS 2 to bashrc if not already present
+    if ! grep -q "source /opt/ros/jazzy/setup.bash" ~/.bashrc; then
+        echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+    fi
 else
     echo "ROS 2 Jazzy already installed."
 fi
 
 source /opt/ros/jazzy/setup.bash
 
-# ---- 4. ROS 2 Additional Packages ----
+# ---- 4. ROS 2 Additional Packages + System Libraries ----
 echo ""
 echo "=== [4/8] ROS 2 Packages + System Libraries ==="
 sudo apt update
@@ -84,6 +96,7 @@ sudo apt install -y \
     ros-jazzy-message-filters \
     ros-jazzy-image-transport \
     ros-jazzy-diagnostic-msgs \
+    ros-jazzy-std-srvs \
     libfmt-dev \
     libpcl-dev \
     libeigen3-dev \
@@ -91,6 +104,7 @@ sudo apt install -y \
     libopenmpi-dev \
     libceres-dev
 
+# Initialize rosdep
 sudo rosdep init 2>/dev/null || true
 rosdep update --rosdistro=jazzy
 
@@ -99,9 +113,9 @@ echo ""
 echo "=== [5/8] TEASER++ + manif (from source) ==="
 
 # TEASER++
-TEASER_DIR=/tmp/TEASER-plusplus
 if ! ldconfig -p | grep -q teaserpp; then
     echo "Building TEASER++..."
+    TEASER_DIR=/tmp/TEASER-plusplus
     [ ! -d "$TEASER_DIR" ] && git clone --depth 1 https://github.com/MIT-SPARK/TEASER-plusplus.git "$TEASER_DIR"
     cd "$TEASER_DIR" && mkdir -p build && cd build
     cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_DOC=OFF
@@ -112,9 +126,9 @@ else
 fi
 
 # manif
-MANIF_DIR=/tmp/manif
 if [ ! -f /usr/local/include/manif/manif.h ]; then
     echo "Installing manif..."
+    MANIF_DIR=/tmp/manif
     [ ! -d "$MANIF_DIR" ] && git clone --depth 1 https://github.com/artivis/manif.git "$MANIF_DIR"
     cd "$MANIF_DIR" && mkdir -p build && cd build
     cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF
@@ -137,7 +151,8 @@ fi
 # ---- 7. Python Packages (host) ----
 echo ""
 echo "=== [7/8] Python: ultralytics (YOLO) ==="
-pip3 install --user ultralytics
+pip3 install --user --break-system-packages ultralytics 2>/dev/null \
+    || pip3 install --user ultralytics
 
 # ---- 8. Docker + NVIDIA Container Toolkit ----
 echo ""

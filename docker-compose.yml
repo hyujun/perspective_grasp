@@ -1,7 +1,7 @@
 # =============================================================================
 # perspective_grasp - Docker Compose (ML nodes only)
 #
-# Host runs: C++ nodes, YOLO, camera drivers, ur5e controller, RViz2
+# Host runs: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO
 # Docker runs: GPU-heavy Python ML nodes with complex dependencies
 #
 # Usage:
@@ -10,7 +10,33 @@
 #   docker compose up -d                     # Start all ML nodes
 #   docker compose logs -f foundationpose    # View logs
 #   docker compose down                      # Stop all
+#
+# Model weights:
+#   Set env vars or place weights in ./models/<service>/
+#   e.g., export FOUNDATIONPOSE_WEIGHTS=/path/to/weights
 # =============================================================================
+
+x-gpu-common: &gpu-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: ml-base
+  image: perspective_grasp/ml-base:latest
+  network_mode: host
+  ipc: host
+  restart: unless-stopped
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  environment: &gpu-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: all
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 
 services:
   # -----------------------------------------------------------------------
@@ -18,37 +44,17 @@ services:
   # Needs: PyTorch + kaolin + nvdiffrast + specific CUDA ops
   # -----------------------------------------------------------------------
   foundationpose:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: ml-base
-    image: perspective_grasp/ml-base:latest
+    <<: *gpu-common
     container_name: pg_foundationpose
-    network_mode: host
-    ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     volumes:
       - ./isaac_foundationpose_tracker:/ws/src/isaac_foundationpose_tracker
       - ${FOUNDATIONPOSE_WEIGHTS:-./models/foundationpose}:/ws/models/foundationpose
-    # Install project-specific deps then run the node
-    # (override with actual entrypoint once requirements.txt exists)
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
         source /ws/install/setup.bash &&
-        echo 'FoundationPose container ready. Install deps and launch node.' &&
-        bash
+        echo '[FoundationPose] Container ready.' &&
+        ros2 launch isaac_foundationpose_tracker foundationpose.launch.py
       "
 
   # -----------------------------------------------------------------------
@@ -56,26 +62,8 @@ services:
   # Needs: happypose (megapose + cosypose), specific torch + cuda combo
   # -----------------------------------------------------------------------
   cosypose:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: ml-base
-    image: perspective_grasp/ml-base:latest
+    <<: *gpu-common
     container_name: pg_cosypose
-    network_mode: host
-    ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     volumes:
       - ./cosypose_scene_optimizer:/ws/src/cosypose_scene_optimizer
       - ./megapose_ros2_wrapper:/ws/src/megapose_ros2_wrapper
@@ -84,8 +72,8 @@ services:
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
         source /ws/install/setup.bash &&
-        echo 'CosyPose/MegaPose container ready.' &&
-        bash
+        echo '[CosyPose/MegaPose] Container ready.' &&
+        ros2 launch cosypose_scene_optimizer cosypose.launch.py
       "
 
   # -----------------------------------------------------------------------
@@ -93,26 +81,8 @@ services:
   # Needs: PyTorch + segment-anything-2 + specific model checkpoints
   # -----------------------------------------------------------------------
   sam2:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: ml-base
-    image: perspective_grasp/ml-base:latest
+    <<: *gpu-common
     container_name: pg_sam2
-    network_mode: host
-    ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     volumes:
       - ./sam2_instance_segmentor:/ws/src/sam2_instance_segmentor
       - ${SAM2_WEIGHTS:-./models/sam2}:/ws/models/sam2
@@ -120,8 +90,8 @@ services:
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
         source /ws/install/setup.bash &&
-        echo 'SAM2 container ready.' &&
-        bash
+        echo '[SAM2] Container ready.' &&
+        ros2 launch sam2_instance_segmentor sam2_segmentor.launch.py
       "
 
   # -----------------------------------------------------------------------
@@ -129,26 +99,8 @@ services:
   # Needs: Open3D + PyTorch3D + kaolin + many custom deps
   # -----------------------------------------------------------------------
   bundlesdf:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: ml-base
-    image: perspective_grasp/ml-base:latest
+    <<: *gpu-common
     container_name: pg_bundlesdf
-    network_mode: host
-    ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     volumes:
       - ./bundlesdf_unknown_tracker:/ws/src/bundlesdf_unknown_tracker
       - ${BUNDLESDF_WEIGHTS:-./models/bundlesdf}:/ws/models/bundlesdf
@@ -156,6 +108,6 @@ services:
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
         source /ws/install/setup.bash &&
-        echo 'BundleSDF container ready.' &&
-        bash
+        echo '[BundleSDF] Container ready.' &&
+        ros2 launch bundlesdf_unknown_tracker bundlesdf.launch.py
       "

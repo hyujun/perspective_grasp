@@ -1,8 +1,13 @@
 # =============================================================================
 # perspective_grasp - ML Node Base Image
+#
 # Shared base for GPU-heavy Python ML nodes that need dependency isolation.
 # Host runs: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO
 # Docker runs: FoundationPose, MegaPose/CosyPose, SAM2, BundleSDF
+#
+# Usage:
+#   docker compose build              # Build all images
+#   docker compose up foundationpose   # Start one service
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -27,7 +32,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         > /etc/apt/sources.list.d/ros2.list \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- ROS 2 base (rclpy only, no desktop/rviz — host handles GUI) ----
+# ---- ROS 2 base + packages needed by ML nodes ----
+# ros-base includes: rclpy, sensor_msgs, std_msgs, geometry_msgs, launch_ros
+# Additional packages for ML node functionality:
+#   cv-bridge:          Image format conversion (ROS <-> OpenCV/numpy)
+#   tf2-ros:            Transform lookups (camera frame → base frame)
+#   tf2-geometry-msgs:  Transform pose messages
+#   image-transport:    Efficient image transport (compressed topics)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-ros-base \
         python3-colcon-common-extensions \
@@ -41,10 +52,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-image-transport \
     && rm -rf /var/lib/apt/lists/*
 
+# ---- Python packages commonly needed by ML nodes ----
+RUN pip3 install --no-cache-dir --break-system-packages \
+        numpy \
+        opencv-python-headless
+
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /etc/bash.bashrc
 
 # ---------------------------------------------------------------------------
-# perception_msgs — build just the message package so ML nodes can use it
+# Stage 2: msgs-builder — build perception_msgs so ML nodes can use them
 # ---------------------------------------------------------------------------
 FROM ros-ml-base AS msgs-builder
 
@@ -55,7 +71,7 @@ RUN source /opt/ros/jazzy/setup.bash \
     && cd /ws && colcon build --packages-select perception_msgs
 
 # ---------------------------------------------------------------------------
-# Final base with msgs installed
+# Stage 3: ml-base — final image with compiled msgs
 # ---------------------------------------------------------------------------
 FROM ros-ml-base AS ml-base
 
