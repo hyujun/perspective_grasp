@@ -70,8 +70,19 @@ class PoseFilterNode : public rclcpp::Node {
   IekfSe3::Config filter_config_;
   std::unordered_map<std::string, double> source_weights_;
   double stale_timeout_sec_{2.0};
+  double stale_predict_threshold_sec_{1.0};
   std::string output_frame_id_{"camera_color_optical_frame"};
   bool use_associated_input_{true};
+
+  // Fitness-to-noise-scale mapping: noise_scale = fitness / fitness_reference,
+  // clamped to [noise_scale_min, noise_scale_max].
+  double fitness_reference_{0.001};
+  double noise_scale_min_{0.1};
+  double noise_scale_max_{10.0};
+
+  // Runtime diagnostics counters
+  uint64_t total_updates_{0};
+  uint64_t total_rejections_{0};
 };
 
 }  // namespace perspective_grasp

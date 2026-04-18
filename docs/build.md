@@ -60,15 +60,16 @@ colcon build --packages-select grasp_pose_planner
 
 ## Tests
 
-Unit tests use `ament_cmake_gtest`. Three test surfaces ship today:
+Unit tests use `ament_cmake_gtest`. Four test surfaces ship today:
 
 | Phase | Packages | Binaries | Cases | Notes |
 |---|---|---:|---:|---|
 | Phase 1 | `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator` | 5 | 29 | Tracker state machine, CAD loader, `pcl_utils`, hybrid registrator, FPFH |
 | Phase 2 | `cross_camera_associator`, `pcl_merge_node` | 8 | 69 | Hungarian / union-find / global-id / pose buffer / overlap filter + rclcpp smoke tests for both nodes |
+| Phase 3 | `pose_filter_cpp`, `pose_graph_smoother` | 4 | 46 | SE(3) IEKF algorithm (predict/update/outlier/10k-cycle long-run) + rclcpp smoke tests (diagnostics, lifecycle, upstream-frame preservation) |
 | Infrastructure | `multi_camera_calibration`, `perception_meta_controller`, `perception_debug_visualizer` | 8 | 60 | Pure-logic detail libraries + rclcpp smoke tests for the two nodes |
 
-Other packages (Phase 3 filtering, Phase 4 ML, Phase 5 manipulation) do not yet ship tests.
+Phase 4 ML nodes and Phase 5 manipulation do not yet ship tests.
 
 ```bash
 cd ~/ros2_ws/perspective_ws
@@ -79,6 +80,9 @@ colcon test --packages-select teaser_icp_hybrid_registrator yolo_pcl_cpp_tracker
 # Phase 2 (cross_camera_associator / pcl_merge_node)
 colcon test --packages-select cross_camera_associator pcl_merge_node
 
+# Phase 3 (pose_filter_cpp / pose_graph_smoother)
+colcon test --packages-select pose_filter_cpp pose_graph_smoother
+
 # Infrastructure (multi_camera_calibration / meta_controller / debug_visualizer)
 colcon test --packages-select multi_camera_calibration perception_meta_controller perception_debug_visualizer
 
@@ -88,6 +92,7 @@ colcon test-result --verbose
 # Drop into a single binary for gdb / --gtest_filter
 ./build/yolo_pcl_cpp_tracker/test_pcl_utils --gtest_filter=CropToRoi.*
 ./build/cross_camera_associator/test_hungarian_solver --gtest_filter=HungarianSolver.NonSquare*
+./build/pose_filter_cpp/test_iekf_se3 --gtest_filter=IekfSe3Stability.*
 ./build/multi_camera_calibration/test_charuco_detector --gtest_filter=CharucoDetectorTest.Detects*
 ```
 
@@ -97,6 +102,7 @@ Notes:
 - **Optional-dep gating** uses CMake `target_compile_definitions`, not runtime detection. Tests are reported as compiled-out (not failed) on boxes without the dep:
   - `HybridRegistrator::align()` is behind `HAS_TEASERPP` — install TEASER++ via [scripts/install_dependencies.sh](../scripts/install_dependencies.sh).
   - `JointOptimizer` convergence test is behind `HAS_CERES` — install `libceres-dev` to enable. The stub-mode tests (empty samples, `isAvailable() == false` message) always run.
+  - `pose_graph_smoother` auto-detects GTSAM via `find_package(GTSAM QUIET)`. When present it defines `HAS_GTSAM` and links `gtsam`; the optimizer is not implemented yet, so the callback stays passthrough in both build paths and the smoke tests are **not** gated on `HAS_GTSAM`.
 - **Pure-logic extraction pattern.** Each tested package extracts non-ROS-coupled logic into a `detail/` header + small library so tests can link without spinning a node:
   - `yolo_pcl_cpp_tracker` → `yolo_tracker_utils` (`cad_model_manager.cpp`, `pcl_utils.cpp`)
   - `multi_camera_calibration` → `calibration_lib` (with extracted `detail/pose_converters.hpp`, `detail/pose6d.hpp`)
@@ -104,8 +110,10 @@ Notes:
   - `perception_debug_visualizer` → `overlay` (drawing helpers) + `visualizer_core` (node class) + thin `visualizer_main.cpp`
   - `cross_camera_associator` → `cross_camera_lib` (Hungarian / GlobalIdManager / CameraPoseBuffer) + `cross_camera_node_core` (node class) + thin `associator_main.cpp`
   - `pcl_merge_node` → `pcl_merge_lib` (CloudPreprocessor / OverlapFilter) + `pcl_merge_node_core` (node class) + thin `merge_main.cpp`
+  - `pose_filter_cpp` → `iekf_se3_lib` (SE(3) IEKF algorithm) + `pose_filter_node_core` (node class) + thin `pose_filter_main.cpp`
+  - `pose_graph_smoother` → `smoother_node_core` (node class) + thin `smoother_main.cpp`
   Don't re-inline these sources back into the executable.
-- The four rclcpp smoke tests (`test_meta_controller_smoke`, `test_visualizer_smoke`, `test_associator_node_smoke`, `test_merge_node_smoke`) construct the node, drive it via real publishers/services, and spin a `SingleThreadedExecutor` until the expected output appears (with a 2 s deadline).
+- The six rclcpp smoke tests (`test_meta_controller_smoke`, `test_visualizer_smoke`, `test_associator_node_smoke`, `test_merge_node_smoke`, `test_pose_filter_node_smoke`, `test_smoother_node_smoke`) construct the node, drive it via real publishers/services, and spin a `SingleThreadedExecutor` until the expected output appears (with a 2 s deadline). The smoother smoke test also drives the full lifecycle (`configure → activate → deactivate → cleanup`).
 - **`RCL_ROS_TIME` gotcha.** Any code that feeds a `rclcpp::Time` built from a message `header.stamp` into arithmetic must use `RCL_ROS_TIME`. `rclcpp::Time(int64_t)` defaults to `RCL_SYSTEM_TIME`; subtracting mixed clock types throws. Test helpers pass `RCL_ROS_TIME` explicitly.
 
 ## Rebuilding Docker images

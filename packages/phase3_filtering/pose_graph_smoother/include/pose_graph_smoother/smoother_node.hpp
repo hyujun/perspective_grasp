@@ -32,10 +32,12 @@ private:
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   // Parameters
-  int window_size_;
-  double prior_noise_pos_;
-  double prior_noise_rot_;
-  std::string camera_frame_id_;
+#ifdef HAS_GTSAM
+  int window_size_{0};
+  double prior_noise_pos_{0.0};
+  double prior_noise_rot_{0.0};
+#endif
+  std::string fallback_parent_frame_{"camera_color_optical_frame"};
 };
 
 }  // namespace perspective_grasp

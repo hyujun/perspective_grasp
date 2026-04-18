@@ -6,9 +6,11 @@ RGB-D camera-based 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation
 
 **Current status**: C++ packages (Phase 1-3, fusion, infra) are implemented. Phase 1 has 29 gtest
 unit tests; Phase 2 adds another 69 gtest cases (8 binaries) across `cross_camera_associator` +
-`pcl_merge_node`; the 3 infrastructure packages add another 60 gtest cases (8 binaries) —
-pure-logic tests on extracted detail libraries plus rclcpp smoke tests for `AssociatorNode`,
-`MergeNode`, `MetaControllerNode`, and `VisualizerNode`. **All 5 Phase 4 ML nodes** (SAM2,
+`pcl_merge_node`; Phase 3 adds another 46 gtest cases (4 binaries) across `pose_filter_cpp` +
+`pose_graph_smoother` (SE(3) IEKF algorithm + rclcpp/lifecycle smoke); the 3 infrastructure
+packages add another 60 gtest cases (8 binaries) — pure-logic tests on extracted detail libraries
+plus rclcpp smoke tests for `AssociatorNode`, `MergeNode`, `MetaControllerNode`, and
+`VisualizerNode`. **All 5 Phase 4 ML nodes** (SAM2,
 FoundationPose, CosyPose, MegaPose, BundleSDF) are wired end-to-end (pluggable real+mock
 backends, dedicated Docker runtime stages, multi-cam fan-out). SAM2 is live-verified on
 hardware; the other four are mock-smoke-tested — live GPU inference is pending user-side
@@ -83,6 +85,10 @@ colcon test-result --verbose
 colcon test --packages-select cross_camera_associator pcl_merge_node
 colcon test-result --verbose
 
+# Run Phase 3 unit tests (46 tests; SE(3) IEKF algorithm + rclcpp/lifecycle smoke)
+colcon test --packages-select pose_filter_cpp pose_graph_smoother
+colcon test-result --verbose
+
 # Run infrastructure unit tests (60 tests; Ceres-gated optimizer convergence skips if unavailable)
 colcon test --packages-select multi_camera_calibration perception_meta_controller perception_debug_visualizer
 colcon test-result --verbose
@@ -102,7 +108,7 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 - **Bringup**: `perception_bringup` — system-level launches (`perception_system.launch.py`, `phase1_bringup.launch.py`) + shared `camera_config*.yaml`
 - **Phase 1**: `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator`
 - **Phase 2 (Fusion)**: `cross_camera_associator`, `pcl_merge_node` (69 gtests / 8 binaries; node lib split so smoke tests link class without `main()`)
-- **Phase 3 (Filtering)**: `pose_filter_cpp` (SE(3) IEKF), `pose_graph_smoother` (GTSAM, optional)
+- **Phase 3 (Filtering)**: `pose_filter_cpp` (SE(3) IEKF, 35 gtests / 2 binaries; Q∝dt unit fix + diagnostics + fitness clamp landed 2026-04-19), `pose_graph_smoother` (optional GTSAM, 11 gtests / 2 binaries; passthrough preserves upstream frame_id — don't overwrite with `fallback_parent_frame`)
 - **Phase 4 (Refinement)**: all 5 shipping — `isaac_foundationpose_tracker`, `sam2_instance_segmentor` (live-verified), `cosypose_scene_optimizer` (LifecycleNode + `analyze_scene` action), `megapose_ros2_wrapper`, `bundlesdf_unknown_tracker`. Each has pluggable real+mock backends + dedicated Docker stage + multi-cam fan-out
 - **Phase 5 (Manipulation)**: `grasp_pose_planner` — antipodal planner + `Hand10DoF` adapter; finger-joint preshape mapping is a TODO
 - **Infra**: `perception_meta_controller`, `perception_debug_visualizer`, `multi_camera_calibration`

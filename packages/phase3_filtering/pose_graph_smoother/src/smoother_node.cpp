@@ -9,10 +9,15 @@ namespace perspective_grasp
 SmootherNode::SmootherNode(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("pose_graph_smoother", options)
 {
+#ifdef HAS_GTSAM
   declare_parameter("window_size", 20);
   declare_parameter("prior_noise_pos", 0.01);
   declare_parameter("prior_noise_rot", 0.05);
-  declare_parameter("camera_frame_id", std::string("camera_color_optical_frame"));
+#endif
+  // Fallback parent frame for TF if the incoming message has no header.frame_id.
+  // Normally the smoother preserves the upstream frame verbatim.
+  declare_parameter("fallback_parent_frame",
+                    std::string("camera_color_optical_frame"));
 }
 
 SmootherNode::CallbackReturn SmootherNode::on_configure(
@@ -20,14 +25,13 @@ SmootherNode::CallbackReturn SmootherNode::on_configure(
 {
   RCLCPP_INFO(get_logger(), "Configuring SmootherNode");
 
+#ifdef HAS_GTSAM
   window_size_ = static_cast<int>(get_parameter("window_size").as_int());
   prior_noise_pos_ = get_parameter("prior_noise_pos").as_double();
   prior_noise_rot_ = get_parameter("prior_noise_rot").as_double();
-  camera_frame_id_ = get_parameter("camera_frame_id").as_string();
-
-  (void)window_size_;
-  (void)prior_noise_pos_;
-  (void)prior_noise_rot_;
+#endif
+  fallback_parent_frame_ =
+    get_parameter("fallback_parent_frame").as_string();
 
   auto sensor_qos = rclcpp::QoS(1).best_effort();
   sub_filtered_ = create_subscription<perception_msgs::msg::PoseWithMetaArray>(
@@ -39,7 +43,15 @@ SmootherNode::CallbackReturn SmootherNode::on_configure(
 
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-  RCLCPP_INFO(get_logger(), "SmootherNode configured (passthrough mode - GTSAM not available)");
+#ifdef HAS_GTSAM
+  RCLCPP_WARN(
+    get_logger(),
+    "GTSAM is linked but the sliding-window optimizer is not implemented yet; "
+    "falling back to passthrough so /smoother/smoothed_poses keeps flowing.");
+#else
+  RCLCPP_INFO(get_logger(),
+    "SmootherNode configured (passthrough mode - GTSAM not available)");
+#endif
   return CallbackReturn::SUCCESS;
 }
 
@@ -72,25 +84,26 @@ SmootherNode::CallbackReturn SmootherNode::on_cleanup(
 void SmootherNode::filtered_poses_callback(
   const perception_msgs::msg::PoseWithMetaArray::SharedPtr msg)
 {
-#ifdef HAS_GTSAM
-  // TODO: Add poses to GTSAM sliding window, optimize, publish result
-  (void)msg;
-#else
-  // Passthrough mode: republish filtered as smoothed
+  // Until the GTSAM sliding window is implemented, both build paths republish
+  // the input unchanged so downstream consumers don't go silent.
   if (pub_smoothed_->is_activated()) {
     pub_smoothed_->publish(*msg);
     broadcast_tf(*msg);
   }
-#endif
 }
 
 void SmootherNode::broadcast_tf(const perception_msgs::msg::PoseWithMetaArray & msg)
 {
+  // Preserve the upstream parent frame; fall back to the configured default
+  // only when the incoming header has none.
+  const std::string parent_frame =
+    msg.header.frame_id.empty() ? fallback_parent_frame_ : msg.header.frame_id;
+
   for (const auto & pwm : msg.poses) {
     geometry_msgs::msg::TransformStamped t;
     t.header = msg.header;
-    t.header.frame_id = camera_frame_id_;
-    t.child_frame_id = "object_" + std::to_string(pwm.object_id);
+    t.header.frame_id = parent_frame;
+    t.child_frame_id = "object_" + std::to_string(pwm.object_id) + "_smoothed";
     t.transform.translation.x = pwm.pose.pose.position.x;
     t.transform.translation.y = pwm.pose.pose.position.y;
     t.transform.translation.z = pwm.pose.pose.position.z;
@@ -100,14 +113,3 @@ void SmootherNode::broadcast_tf(const perception_msgs::msg::PoseWithMetaArray & 
 }
 
 }  // namespace perspective_grasp
-
-int main(int argc, char ** argv)
-{
-  rclcpp::init(argc, argv);
-  auto node = std::make_shared<perspective_grasp::SmootherNode>();
-  rclcpp::executors::SingleThreadedExecutor executor;
-  executor.add_node(node->get_node_base_interface());
-  executor.spin();
-  rclcpp::shutdown();
-  return 0;
-}

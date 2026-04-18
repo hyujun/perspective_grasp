@@ -1,14 +1,28 @@
 pose_filter:
   ros__parameters:
+    # Process noise — continuous-time standard deviations
     process_noise_pos: 0.001       # m/sqrt(s)
     process_noise_rot: 0.01        # rad/sqrt(s)
-    process_noise_vel: 0.1
+    process_noise_omega: 0.1       # rad/s/sqrt(s)
+    process_noise_vel: 0.1         # m/s/sqrt(s)
+
+    # Default measurement noise (scaled per-source by noise_scale)
+    meas_noise_pos: 0.005          # m
+    meas_noise_rot: 0.05           # rad
+
     iekf_max_iterations: 3
     mahalanobis_threshold: 16.81   # chi2(6, 0.01)
     publish_rate_hz: 30.0
-    stale_timeout_sec: 2.0
+    stale_timeout_sec: 2.0         # filter dropped when idle this long
+    stale_predict_threshold_sec: 1.0  # if dt > this, reinit filter instead of predicting
     output_frame_id: camera_color_optical_frame  # Use base_link for multi-cam
-    use_associated_input: true  # false = legacy 4-subscription mode
+    use_associated_input: true     # false = legacy 4-subscription mode
+
+    # Fitness → noise-scale mapping: scale = fitness / fitness_reference,
+    # clamped to [noise_scale_min, noise_scale_max].
+    fitness_reference: 0.001
+    noise_scale_min: 0.1
+    noise_scale_max: 10.0
 
     # Source weights (lower = more trusted, used in legacy mode)
     source_weights:

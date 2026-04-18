@@ -53,37 +53,38 @@ void IekfSe3::predict(double dt) {
   Eigen::Vector3d omega = twist_.head<3>();
   Eigen::Vector3d vel = twist_.tail<3>();
 
+  // Cache pre-integration rotation for the Jacobian linearization point.
+  const Eigen::Matrix3d R_prev = pose_.linear();
+
   // Integrate pose: T_new = T * exp(twist * dt)
-  Eigen::Matrix3d dR = expSO3(omega * dt);
-  Eigen::Vector3d dp = vel * dt;
+  const Eigen::Matrix3d dR = expSO3(omega * dt);
+  const Eigen::Vector3d dp = vel * dt;
+  pose_.linear() = R_prev * dR;
+  pose_.translation() += R_prev * dp;
 
-  pose_.linear() = pose_.linear() * dR;
-  pose_.translation() += pose_.linear() * dp;
-
-  // State transition Jacobian F (12x12)
+  // State transition Jacobian F (12x12), evaluated at the pre-integration
+  // linearization point.
   Eigen::Matrix<double, 12, 12> F =
       Eigen::Matrix<double, 12, 12>::Identity();
-  // d(rot)/d(omega) = I * dt
   F.block<3, 3>(0, 6) = Eigen::Matrix3d::Identity() * dt;
-  // d(pos)/d(vel) = R * dt
-  F.block<3, 3>(3, 9) = pose_.linear() * dt;
+  F.block<3, 3>(3, 9) = R_prev * dt;
 
-  // Process noise Q
+  // Continuous-time process-noise densities (σ in units of e.g. rad/√s)
+  // produce discrete-time covariance contribution σ² · dt.
   Eigen::Matrix<double, 12, 12> Q =
       Eigen::Matrix<double, 12, 12>::Zero();
-  double dt2 = dt * dt;
-  Q.block<3, 3>(0, 0) =
-      Eigen::Matrix3d::Identity() * config_.process_noise_rot *
-      config_.process_noise_rot * dt2;
-  Q.block<3, 3>(3, 3) =
-      Eigen::Matrix3d::Identity() * config_.process_noise_pos *
-      config_.process_noise_pos * dt2;
-  Q.block<3, 3>(6, 6) =
-      Eigen::Matrix3d::Identity() * config_.process_noise_omega *
-      config_.process_noise_omega * dt2;
-  Q.block<3, 3>(9, 9) =
-      Eigen::Matrix3d::Identity() * config_.process_noise_vel *
-      config_.process_noise_vel * dt2;
+  Q.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity() *
+                       config_.process_noise_rot *
+                       config_.process_noise_rot * dt;
+  Q.block<3, 3>(3, 3) = Eigen::Matrix3d::Identity() *
+                       config_.process_noise_pos *
+                       config_.process_noise_pos * dt;
+  Q.block<3, 3>(6, 6) = Eigen::Matrix3d::Identity() *
+                       config_.process_noise_omega *
+                       config_.process_noise_omega * dt;
+  Q.block<3, 3>(9, 9) = Eigen::Matrix3d::Identity() *
+                       config_.process_noise_vel *
+                       config_.process_noise_vel * dt;
 
   P_ = F * P_ * F.transpose() + Q;
 }

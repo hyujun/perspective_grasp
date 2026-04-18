@@ -23,11 +23,13 @@ else()
   message(STATUS "GTSAM not found - building passthrough stub")
 endif()
 
-add_executable(smoother_node src/smoother_node.cpp)
-target_include_directories(smoother_node PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
+# Node class as a library so smoke tests can link it without main()
+add_library(smoother_node_core src/smoother_node.cpp)
+target_include_directories(smoother_node_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
-ament_target_dependencies(smoother_node
+ament_target_dependencies(smoother_node_core
   rclcpp
   rclcpp_lifecycle
   geometry_msgs
@@ -35,17 +37,36 @@ ament_target_dependencies(smoother_node
   tf2_eigen
   perception_msgs
 )
-target_link_libraries(smoother_node Eigen3::Eigen)
-
+target_link_libraries(smoother_node_core Eigen3::Eigen)
 if(GTSAM_FOUND)
-  target_link_libraries(smoother_node gtsam)
+  target_link_libraries(smoother_node_core gtsam)
 endif()
 
+# Executable is a thin wrapper around the node library
+add_executable(smoother_node src/smoother_main.cpp)
+target_link_libraries(smoother_node smoother_node_core)
+ament_target_dependencies(smoother_node rclcpp rclcpp_lifecycle)
+
 install(TARGETS smoother_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS smoother_node_core
+  EXPORT ${PROJECT_NAME}_targets
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  INCLUDES DESTINATION include)
+install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+
+ament_export_targets(${PROJECT_NAME}_targets HAS_LIBRARY_TARGET)
+ament_export_dependencies(rclcpp rclcpp_lifecycle perception_msgs
+  geometry_msgs tf2_ros tf2_eigen)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(lifecycle_msgs REQUIRED)
+
+  ament_add_gtest(test_smoother_node_smoke test/test_smoother_node_smoke.cpp)
+  target_link_libraries(test_smoother_node_smoke smoother_node_core)
+  ament_target_dependencies(test_smoother_node_smoke lifecycle_msgs)
 endif()
 
 ament_package()
