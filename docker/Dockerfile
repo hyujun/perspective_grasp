@@ -3,7 +3,7 @@
 #
 # Shared base for GPU-heavy Python ML nodes that need dependency isolation.
 # Host runs: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO
-# Docker runs: FoundationPose, CosyPose + MegaPose (shared stage), SAM2, BundleSDF
+# Docker runs: FoundationPose, CosyPose + MegaPose (shared stage), BundleSDF, SAM2
 #
 # Usage:
 #   docker compose build              # Build all images
@@ -256,7 +256,92 @@ WORKDIR /ws
 CMD ["bash"]
 
 # ---------------------------------------------------------------------------
-# Stage 6: sam2-runtime — ml-base + PyTorch + Meta SAM2
+# Stage 6: bundlesdf-runtime — ml-base + PyTorch + kaolin + PyTorch3D
+#
+# NVlabs BundleSDF (https://github.com/NVlabs/BundleSDF) builds a
+# neural SDF + pose graph for unknown objects from sequential RGB-D
+# + mask inputs. Needs:
+#   * torch / torchvision (CUDA 12.6 wheels) — same pin as other stages
+#   * kaolin 0.17 (mesh + SDF helpers; headers bound to torch ABI)
+#   * nvdiffrast 0.3.3 (differentiable rasteriser; used by NeRF renderer)
+#   * PyTorch3D v0.7.9 (source-build against torch 2.6 / cu126)
+#   * Open3D (mesh + point-cloud ops) — pip wheel
+#   * trimesh / pyrender / imageio / ruamel.yaml / kornia / pyrender /
+#     omegaconf — runtime utilities BundleSDF imports directly
+#
+# The BundleSDF python sources are cloned into /opt/BundleSDF and
+# that path is added to PYTHONPATH so `from bundlesdf import BundleSdf`
+# works from the ROS node's runtime PYTHONPATH. The BundleTrack
+# pybind11 / CUDA extension is NOT pre-built here — it compiles on
+# first import inside the container so the image build stays bounded.
+# Weights + NeRF configs are volume-mounted at runtime (see
+# docker-compose BUNDLESDF_WEIGHTS).
+#
+# Dep risk notes (see memory/bundlesdf_next_steps.md + happypose_install_trap.md):
+#   * pin numpy<2 in every layer — sklearn / imageio etc. drag numpy 2
+#     through transitive resolution, breaking cv_bridge's NumPy 1.x ABI.
+#   * BundleSDF's .gitmodules points at external repos that may 404;
+#     clone without --recurse-submodules, same workaround CosyPose used.
+#   * skip torchtnt / scikit-learn pyproject extras unless a concrete
+#     import demands them (they force torch upgrades / numpy 2.x).
+# ---------------------------------------------------------------------------
+FROM ml-base AS bundlesdf-runtime
+
+# numpy<2 first (cv_bridge ABI — same constraint as the other stages).
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+        "numpy<2"
+
+# Native deps: kaolin / nvdiffrast / open3d / pyrender / BundleSDF C++ ext.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libegl1 libgl1 libgles2 libglvnd0 libxrender1 libxi6 libxkbcommon0 \
+        libsm6 libxext6 libglib2.0-0 libosmesa6-dev freeglut3-dev \
+        libeigen3-dev libboost-all-dev libyaml-cpp-dev libpcl-dev \
+        ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+# PyTorch 2.6 + CUDA 12.6 — same pin as the other Phase 4 stages.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        --index-url https://download.pytorch.org/whl/cu126 \
+        torch==2.6.0 torchvision==0.21.0
+
+# Runtime utilities BundleSDF imports directly. numpy<2 re-asserted
+# because scikit-image / open3d transitive deps otherwise upgrade it.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        "numpy<2" \
+        trimesh==4.5.3 pyrender==0.1.45 open3d==0.18.0 \
+        opencv-python-headless==4.10.0.84 \
+        scipy==1.14.1 scikit-image==0.24.0 \
+        imageio==2.36.0 omegaconf==2.3.0 \
+        ruamel.yaml==0.18.6 joblib==1.4.2 \
+        kornia==0.7.4 \
+        transformations==2024.6.1 einops==0.8.0 \
+        plyfile==1.1 pybind11==2.13.6
+
+# nvdiffrast + kaolin — compile against the torch we just installed.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        git+https://github.com/NVlabs/nvdiffrast.git@v0.3.3
+RUN pip3 install --no-cache-dir --break-system-packages \
+        kaolin==0.17.0 \
+        -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.6.0_cu126.html
+
+# PyTorch3D — source install against the torch above (same pin as
+# cosypose-runtime).
+RUN pip3 install --no-cache-dir --break-system-packages \
+        "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.9"
+
+# BundleSDF sources — cloned once, put on PYTHONPATH. Weights are
+# volume-mounted at runtime (see docker-compose BUNDLESDF_WEIGHTS).
+# --recurse-submodules skipped: BundleSDF's .gitmodules points at
+# external repos that may 404 (same trap as happypose).
+RUN git clone --depth 1 https://github.com/NVlabs/BundleSDF.git \
+        /opt/BundleSDF
+ENV PYTHONPATH=/opt/BundleSDF:${PYTHONPATH}
+
+WORKDIR /ws
+CMD ["bash"]
+
+# ---------------------------------------------------------------------------
+# Stage 7: sam2-runtime — ml-base + PyTorch + Meta SAM2
 #
 # Separate stage so SAM2's PyTorch version does not clash with other
 # Phase 4 services (kaolin/nvdiffrast/PyTorch3D have their own pins).

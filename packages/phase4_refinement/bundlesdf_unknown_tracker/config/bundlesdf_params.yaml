@@ -1,10 +1,34 @@
-bundlesdf_tracker:
+# '/**' = wildcard node matcher: applies whether this file is loaded into
+# '/bundlesdf_tracker' (single-cam / no-arg) or '/cam{N}/bundlesdf_tracker'
+# (multi-camera fan-out from bundlesdf.launch.py).
+/**:
   ros__parameters:
-    near_plane: 0.1                  # meters
-    far_plane: 2.0                   # meters
-    sdf_resolution: 128
-    keyframe_interval: 5
-    bundle_adjust_iterations: 10
-    image_topic: /camera/color/image_raw
-    depth_topic: /camera/depth/image_rect_raw
-    camera_info_topic: /camera/color/camera_info
+    # ── Backend selection ────────────────────────────────────────────
+    # 'bundlesdf' — NVlabs BundleSDF (GPU, runs in Docker service)
+    # 'mock'      — depth-unprojected mask-centroid (CPU, smoke test only)
+    backend: "bundlesdf"
+
+    # ── Topics ───────────────────────────────────────────────────────
+    image_topic:        "/camera/color/image_raw"
+    depth_topic:        "/camera/depth/image_rect_raw"
+    camera_info_topic:  "/camera/color/camera_info"
+    masks_topic:        "/sam2/masks"
+    poses_topic:        "/bundlesdf/raw_poses"
+
+    # ── Frame / mask pairing ─────────────────────────────────────────
+    frame_queue_size:        10
+    sync_tolerance_sec:      0.05     # max |t_frame - t_masks|
+    min_mask_confidence:     0.0
+    stale_track_frames:      30       # drop track state after N frames
+                                      # without a matching mask id
+
+    # ── BundleSDF backend ────────────────────────────────────────────
+    # Paths are inside the container (see docker-compose volume mount).
+    bundlesdf_src:    "/opt/BundleSDF"
+    cfg_track_path:   "/opt/BundleSDF/BundleTrack/config_ho3d.yml"
+    cfg_nerf_path:    "/opt/BundleSDF/nerf_runner.yml"
+    out_dir:          "/ws/models/bundlesdf/out"
+    shorter_side:     480
+    depth_max_m:      2.0
+    min_mask_area:    400
+    device:           "cuda"

@@ -6,7 +6,7 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
 
 - **Vision Push, Controller Pull.** The vision stack broadcasts TF2 transforms continuously. The robot controller calls `lookupTransform()` at its own rate. The controller never waits on a vision topic callback.
 - **Heavy ops are Action Servers.** Scene analysis and grasp planning are long-running operations — they are exposed as ROS 2 actions, not services, so the control loop never blocks on them.
-- **Host + Docker hybrid.** C++ perception nodes and YOLO run on the host. GPU-heavy Python ML nodes (FoundationPose, SAM2, CosyPose, BundleSDF) run in containers for dependency isolation.
+- **Host + Docker hybrid.** C++ perception nodes and YOLO run on the host. GPU-heavy Python ML nodes (FoundationPose, SAM2, CosyPose, MegaPose, BundleSDF) run in containers for dependency isolation.
 - **Unified multi-camera code path.** `N=1` is treated as "N=1 multi-camera". Configuration lives in YAML; launch files and fusion code never branch on camera count.
 - **No cross-workspace code coupling.** The UR5e controller workspace communicates with this repo only via TF2 frames and action interfaces — never via imported types or shared libraries.
 
@@ -40,8 +40,9 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
                                 │
            ┌────────────────────▼────────────────────┐
            │  Phase 4: Refinement (On-Demand)        │
-           │  foundationpose  sam2                   │
-           │  (cosypose  megapose  bundlesdf stubs)  │
+           │  foundationpose  sam2  cosypose         │
+           │  megapose        bundlesdf              │
+           │  (all shipping; SAM2 live-verified)     │
            └────────────────────┬────────────────────┘
                                 │
            ┌────────────────────▼────────────────────┐
@@ -67,10 +68,10 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
 | Phase 3 | [pose_filter_cpp](../packages/phase3_filtering/pose_filter_cpp/) | C++ |
 | Phase 3 | [pose_graph_smoother](../packages/phase3_filtering/pose_graph_smoother/) | C++ |
 | Phase 4 | [isaac_foundationpose_tracker](../packages/phase4_refinement/isaac_foundationpose_tracker/) | Python |
-| Phase 4 (stub) | [megapose_ros2_wrapper](../packages/phase4_refinement/megapose_ros2_wrapper/) | Python |
-| Phase 4 (stub) | [cosypose_scene_optimizer](../packages/phase4_refinement/cosypose_scene_optimizer/) | Python |
+| Phase 4 | [megapose_ros2_wrapper](../packages/phase4_refinement/megapose_ros2_wrapper/) | Python |
+| Phase 4 | [cosypose_scene_optimizer](../packages/phase4_refinement/cosypose_scene_optimizer/) | Python |
 | Phase 4 | [sam2_instance_segmentor](../packages/phase4_refinement/sam2_instance_segmentor/) | Python |
-| Phase 4 (stub) | [bundlesdf_unknown_tracker](../packages/phase4_refinement/bundlesdf_unknown_tracker/) | Python |
+| Phase 4 | [bundlesdf_unknown_tracker](../packages/phase4_refinement/bundlesdf_unknown_tracker/) | Python |
 | Phase 5 | [grasp_pose_planner](../packages/phase5_manipulation/grasp_pose_planner/) | Python |
 | Infra | [perception_meta_controller](../packages/infrastructure/perception_meta_controller/) | C++ |
 | Infra | [perception_debug_visualizer](../packages/infrastructure/perception_debug_visualizer/) | C++ |
@@ -102,6 +103,8 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
 | `/smoother/smoothed_poses` | `PoseWithMetaArray` | `pose_graph_smoother` |
 | `/foundationpose/raw_poses` | `PoseWithMetaArray` | `isaac_foundationpose_tracker` |
 | `/cosypose/optimized_poses` | `PoseWithMetaArray` | `cosypose_scene_optimizer` |
+| `/megapose/raw_poses` | `PoseWithMetaArray` | `megapose_ros2_wrapper` |
+| `/bundlesdf/raw_poses` | `PoseWithMetaArray` | `bundlesdf_unknown_tracker` |
 | `/sam2/masks` | `SegmentationArray` | `sam2_instance_segmentor` |
 | `/meta_controller/active_pipeline` | `PipelineStatus` | `perception_meta_controller` |
 

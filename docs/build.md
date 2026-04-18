@@ -110,12 +110,15 @@ The ML containers compile `perception_msgs` at image-build time (via a `msgs-bui
 ```bash
 cd ~/ros2_ws/perspective_ws/src/perspective_grasp
 
-# Rebuild base image (foundationpose / cosypose / bundlesdf)
+# Rebuild all service images
 docker compose -f docker/docker-compose.yml build
 
-# Rebuild a specific service
-docker compose -f docker/docker-compose.yml build foundationpose
-docker compose -f docker/docker-compose.yml build sam2        # uses sam2-runtime target
+# Rebuild a specific service (each picks up its dedicated stage)
+docker compose -f docker/docker-compose.yml build foundationpose  # foundationpose-runtime
+docker compose -f docker/docker-compose.yml build sam2            # sam2-runtime
+docker compose -f docker/docker-compose.yml build cosypose        # cosypose-runtime (shared)
+docker compose -f docker/docker-compose.yml build megapose        # cosypose-runtime (shared with cosypose)
+docker compose -f docker/docker-compose.yml build bundlesdf       # bundlesdf-runtime
 
 # Force no-cache (after a messy dependency change)
 docker compose -f docker/docker-compose.yml build --no-cache

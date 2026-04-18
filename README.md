@@ -2,7 +2,7 @@
 
 RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulation. 17 ROS 2 packages across 5 pipeline phases, supporting 1–3 cameras via config-driven topology.
 
-> **Status.** Phase 1–3 (C++ perception, fusion, filtering) and infra are implemented. Phase 4: **SAM2** and **FoundationPose** are wired end-to-end (pluggable real+mock backends, dedicated Docker runtime stages, multi-camera fan-out). **MegaPose / CosyPose / BundleSDF** remain stubs. Phase 5 (`grasp_pose_planner`) ships an antipodal planner + `Hand10DoF` adapter (real 10-DoF preshape mapping still TODO).
+> **Status.** Phase 1–3 (C++ perception, fusion, filtering) and infra are implemented. **All 5 Phase 4 ML nodes** (SAM2, FoundationPose, CosyPose, MegaPose, BundleSDF) are wired end-to-end with pluggable real+mock backends, dedicated Docker runtime stages, and multi-camera fan-out. SAM2 is live-verified on hardware; the other four are mock-smoke-tested — live GPU inference is pending user-side weights + Docker image builds. Phase 5 (`grasp_pose_planner`) ships an antipodal planner + `Hand10DoF` adapter (real 10-DoF preshape mapping still TODO).
 
 ## Documentation
 
@@ -27,7 +27,7 @@ perspective_grasp/
     ├── phase1_perception/        # yolo_pcl_cpp_tracker, teaser_icp_hybrid_registrator
     ├── phase2_fusion/            # cross_camera_associator, pcl_merge_node
     ├── phase3_filtering/         # pose_filter_cpp, pose_graph_smoother
-    ├── phase4_refinement/        # foundationpose + sam2 (done), megapose + cosypose + bundlesdf (stubs)
+    ├── phase4_refinement/        # foundationpose + sam2 + cosypose + megapose + bundlesdf (all shipping)
     ├── phase5_manipulation/      # grasp_pose_planner (antipodal planner + Hand10DoF adapter)
     └── infrastructure/           # meta_controller, debug_visualizer, multi_camera_calibration
 ```
@@ -41,7 +41,7 @@ perspective_grasp/
 | 1 | Detection + 6D pose estimation | `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator` |
 | 2 | Multi-camera fusion | `cross_camera_associator`, `pcl_merge_node` |
 | 3 | Filtering + smoothing | `pose_filter_cpp`, `pose_graph_smoother` |
-| 4 | Refinement (on-demand) | **FoundationPose** + **SAM2** (done); MegaPose, CosyPose, BundleSDF (stubs) |
+| 4 | Refinement (on-demand) | FoundationPose, SAM2, CosyPose, MegaPose, BundleSDF (all shipping — live GPU verification pending on 4/5) |
 | 5 | Grasp planning | `grasp_pose_planner` (antipodal + `Hand10DoF`) |
 
 ## Quick start

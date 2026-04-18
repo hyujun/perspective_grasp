@@ -178,19 +178,37 @@ services:
       "
 
   # -----------------------------------------------------------------------
-  # BundleSDF — unknown object tracking via neural implicit surfaces
-  # Needs: Open3D + PyTorch3D + kaolin + many custom deps
+  # BundleSDF — unknown-object 6D tracker via neural implicit surfaces
+  # Needs: PyTorch 2.6 + kaolin 0.17 + nvdiffrast 0.3.3 + PyTorch3D v0.7.9
+  # + Open3D + NVlabs/BundleSDF clone (built in stage).
+  # Weights mount: $BUNDLESDF_WEIGHTS → /ws/models/bundlesdf
+  #   expected layout:
+  #     out/                         # per-track SDF / debug outputs (writable)
+  #     weights/                     # optional pretrained NeRF / scorer weights
+  # Config mount: perception_bringup/config → /ws/config (read-only) so
+  #   camera_config*.yaml is available to the launch file.
+  # BUNDLESDF_CAMERA_CONFIG selects the camera topology:
+  #   unset / empty  → one non-namespaced /bundlesdf_tracker (1-cam)
+  #   /ws/config/camera_config_2cam.yaml → /cam0 + /cam1 fan-out
+  #   /ws/config/camera_config.yaml      → /cam0 + /cam1 + /cam2 fan-out
   # -----------------------------------------------------------------------
   bundlesdf:
     <<: *gpu-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: bundlesdf-runtime
+    image: perspective_grasp/bundlesdf:latest
     container_name: pg_bundlesdf
     volumes:
       - ../packages/phase4_refinement/bundlesdf_unknown_tracker:/ws/src/bundlesdf_unknown_tracker
+      - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${BUNDLESDF_WEIGHTS:-../models/bundlesdf}:/ws/models/bundlesdf
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
+        cd /ws && colcon build --packages-select bundlesdf_unknown_tracker &&
         source /ws/install/setup.bash &&
         echo '[BundleSDF] Container ready.' &&
-        ros2 launch bundlesdf_unknown_tracker bundlesdf.launch.py
+        ros2 launch bundlesdf_unknown_tracker bundlesdf.launch.py ${BUNDLESDF_CAMERA_CONFIG:+camera_config:=$BUNDLESDF_CAMERA_CONFIG}
       "

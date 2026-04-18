@@ -12,7 +12,7 @@ Host setup for `perspective_grasp`. The workspace uses a **host + Docker hybrid*
 | Docker | Required only for Phase 4 ML nodes |
 | Workspace path | `~/ros2_ws/perspective_ws/` (assumed throughout docs) |
 
-> Phase 4 status is mixed: **SAM2** and **FoundationPose** produce real output once their weights are in place; **MegaPose / CosyPose / BundleSDF** remain stubs (launch files + skeletons, no inference).
+> All five Phase 4 ML nodes (SAM2, FoundationPose, CosyPose, MegaPose, BundleSDF) are implemented with pluggable real+mock backends. SAM2 is live-verified; the other four are mock-smoke-tested and will produce real output once their Docker images are built and weights are in place.
 
 ## Clone
 
@@ -61,7 +61,14 @@ Installs ROS 2 packages, system libs, TEASER++, manif, GTSAM, and ultralytics. D
 
 ## Docker images (Phase 4 ML stack)
 
-The Phase 4 services share a base image `perspective_grasp/ml-base` built from [docker/Dockerfile](../docker/Dockerfile). Each GPU-heavy service has its own runtime stage when its dependency stack (PyTorch + CUDA ops) would otherwise collide with peers: `sam2-runtime` pins PyTorch 2.6 + Meta SAM2, and `foundationpose-runtime` pins PyTorch 2.6 + kaolin 0.17 + nvdiffrast 0.3.3.
+The Phase 4 services share a base image `perspective_grasp/ml-base` built from [docker/Dockerfile](../docker/Dockerfile). Each GPU-heavy service has its own runtime stage when its dependency stack (PyTorch + CUDA ops) would otherwise collide with peers:
+
+| Stage | Pins | Used by |
+|---|---|---|
+| `foundationpose-runtime` | torch 2.6 + kaolin 0.17 + nvdiffrast 0.3.3 + NVlabs/FoundationPose at `/opt/FoundationPose` | `foundationpose` |
+| `cosypose-runtime` | torch 2.6 + PyTorch3D v0.7.9 + happypose at `/opt/happypose` | `cosypose`, `megapose` (shared) |
+| `bundlesdf-runtime` | torch 2.6 + kaolin 0.17 + nvdiffrast 0.3.3 + PyTorch3D v0.7.9 + Open3D 0.18 + NVlabs/BundleSDF at `/opt/BundleSDF` | `bundlesdf` |
+| `sam2-runtime` | torch 2.6 + Meta SAM2 | `sam2` |
 
 ```bash
 cd ~/ros2_ws/perspective_ws/src/perspective_grasp
@@ -78,10 +85,19 @@ Each Phase 4 service expects weights under a mount point. Either set an env var 
 # FoundationPose expects two sub-dirs under this mount:
 #   meshes/<class_name>.(obj|ply|stl)   — one file per YOLO class
 #   weights/                            — FoundationPose refiner / scorer checkpoints
-export FOUNDATIONPOSE_WEIGHTS=/path/to/foundationpose
-export SAM2_WEIGHTS=/path/to/sam2/weights
-export COSYPOSE_WEIGHTS=/path/to/cosypose/weights
-export BUNDLESDF_WEIGHTS=/path/to/bundlesdf/weights
+export FOUNDATIONPOSE_WEIGHTS=/path/to/models/foundationpose
+
+# SAM2 checkpoint (sam2_hiera_large.pt)
+export SAM2_WEIGHTS=/path/to/models/sam2
+
+# happypose weights shared by CosyPose + MegaPose; meshes directory shared too
+# (flat: <class>.(obj|ply), one file per YOLO class — .stl not supported).
+export HAPPYPOSE_WEIGHTS=/path/to/models/happypose
+export MEGAPOSE_MESHES=/path/to/models/megapose/meshes
+
+# BundleSDF writes per-track SDF/debug output here; defaults (track/nerf configs)
+# come from the cloned /opt/BundleSDF repo.
+export BUNDLESDF_WEIGHTS=/path/to/models/bundlesdf
 ```
 
 ## Verification

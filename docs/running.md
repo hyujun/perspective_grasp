@@ -2,7 +2,7 @@
 
 How to launch the perception stack on the host, the ML nodes in Docker, and how to switch between 1 / 2 / 3 camera configurations.
 
-> **Status note.** `isaac_foundationpose_tracker` and `sam2_instance_segmentor` are live (real + mock backends, Docker runtime stages, multi-cam fan-out). `grasp_pose_planner` ships an antipodal planner + `Hand10DoF` adapter. `megapose_ros2_wrapper`, `cosypose_scene_optimizer`, and `bundlesdf_unknown_tracker` remain stubs — their launches start cleanly but produce no output until implemented. Everything else (Phase 1–3, fusion, filtering, infra) is live.
+> **Status note.** All five Phase 4 ML nodes (`isaac_foundationpose_tracker`, `sam2_instance_segmentor`, `cosypose_scene_optimizer`, `megapose_ros2_wrapper`, `bundlesdf_unknown_tracker`) ship pluggable real + mock backends, dedicated Docker runtime stages, and multi-camera fan-out. SAM2 is live-verified on hardware; the other four are mock-smoke-tested — they will produce real output once their Docker images are built and weights + meshes are in place. `grasp_pose_planner` ships an antipodal planner + `Hand10DoF` adapter (real 10-DoF preshape mapping still TODO). Everything else (Phase 1–3, fusion, filtering, infra) is live.
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ ros2 launch pcl_merge_node merge.launch.py
 ros2 launch pose_filter_cpp pose_filter.launch.py
 ros2 launch pose_graph_smoother smoother.launch.py
 
-# Phase 5: Grasp planning action server (stub)
+# Phase 5: Grasp planning action server (antipodal + Hand10DoF)
 ros2 launch grasp_pose_planner grasp_planner.launch.py
 
 # Infrastructure
@@ -58,9 +58,10 @@ cd ~/ros2_ws/perspective_ws/src/perspective_grasp
 
 # Start individual services
 docker compose -f docker/docker-compose.yml up foundationpose -d
-docker compose -f docker/docker-compose.yml up sam2          -d
-docker compose -f docker/docker-compose.yml up cosypose      -d
-docker compose -f docker/docker-compose.yml up bundlesdf     -d
+docker compose -f docker/docker-compose.yml up sam2           -d
+docker compose -f docker/docker-compose.yml up cosypose       -d
+docker compose -f docker/docker-compose.yml up megapose       -d
+docker compose -f docker/docker-compose.yml up bundlesdf      -d
 
 # Start all
 docker compose -f docker/docker-compose.yml up -d
@@ -72,9 +73,9 @@ docker compose -f docker/docker-compose.yml logs -f foundationpose
 docker compose -f docker/docker-compose.yml down
 ```
 
-Model weights mount from `$FOUNDATIONPOSE_WEIGHTS` / `$SAM2_WEIGHTS` / `$COSYPOSE_WEIGHTS` / `$BUNDLESDF_WEIGHTS` (or `models/<service>/` at repo root). See [installation.md](installation.md#model-weights).
+Model weights mount from service-specific env vars — `$FOUNDATIONPOSE_WEIGHTS`, `$SAM2_WEIGHTS`, `$HAPPYPOSE_WEIGHTS` + `$MEGAPOSE_MESHES` (shared by cosypose + megapose), `$BUNDLESDF_WEIGHTS`. If unset, services fall back to `models/<service>/` at repo root. See [installation.md](installation.md#model-weights).
 
-Both SAM2 and FoundationPose support multi-camera fan-out via an env var that points at a `camera_config*.yaml`. The compose file mounts the `perception_bringup/config` directory read-only at `/ws/config`:
+All five services support multi-camera fan-out via an env var pointing at a `camera_config*.yaml`. The compose file mounts `perception_bringup/config` read-only at `/ws/config`:
 
 ```bash
 # SAM2: 2-camera fan-out (/cam0 + /cam1)
@@ -84,7 +85,17 @@ SAM2_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
 # FoundationPose: 3-camera fan-out (/cam0 + /cam1 + /cam2)
 FOUNDATIONPOSE_CAMERA_CONFIG=/ws/config/camera_config.yaml \
   docker compose -f docker/docker-compose.yml up foundationpose
+
+# CosyPose / MegaPose / BundleSDF use the same contract
+COSYPOSE_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
+  docker compose -f docker/docker-compose.yml up cosypose
+MEGAPOSE_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
+  docker compose -f docker/docker-compose.yml up megapose
+BUNDLESDF_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
+  docker compose -f docker/docker-compose.yml up bundlesdf
 ```
+
+Under fan-out, CosyPose's action server is also namespaced: each per-camera node exposes `/cam{N}/analyze_scene` rather than a global `/analyze_scene` — clients must pick the right one.
 
 ## Camera configuration
 
@@ -151,8 +162,9 @@ Heavy operations are exposed as actions rather than services, so the control loo
 # Scene analysis (perception_meta_controller)
 ros2 action send_goal /meta_controller/analyze_scene perception_msgs/action/AnalyzeScene "{...}"
 
-# Grasp planning (grasp_pose_planner — stub)
-ros2 action send_goal /grasp_planner/plan_grasp perception_msgs/action/PlanGrasp "{...}"
+# Grasp planning (grasp_pose_planner — antipodal + Hand10DoF)
+ros2 action send_goal /plan_grasp perception_msgs/action/PlanGrasp \
+  "{target_object_id: 0, grasp_strategy: 'power'}"
 ```
 
 ## Next

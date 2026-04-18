@@ -8,10 +8,12 @@ RGB-D camera-based 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation
 unit tests; Phase 2 adds another 69 gtest cases (8 binaries) across `cross_camera_associator` +
 `pcl_merge_node`; the 3 infrastructure packages add another 60 gtest cases (8 binaries) —
 pure-logic tests on extracted detail libraries plus rclcpp smoke tests for `AssociatorNode`,
-`MergeNode`, `MetaControllerNode`, and `VisualizerNode`. Phase 4 ML nodes: **SAM2** and
-**FoundationPose** are wired end-to-end (pluggable real+mock backends, docker runtimes, multi-cam
-fan-out); **MegaPose / CosyPose / BundleSDF** remain stubs. Phase 5 **grasp_pose_planner**
-antipodal planner is implemented (robot-agnostic planner + `Hand10DoF` adapter).
+`MergeNode`, `MetaControllerNode`, and `VisualizerNode`. **All 5 Phase 4 ML nodes** (SAM2,
+FoundationPose, CosyPose, MegaPose, BundleSDF) are wired end-to-end (pluggable real+mock
+backends, dedicated Docker runtime stages, multi-cam fan-out). SAM2 is live-verified on
+hardware; the other four are mock-smoke-tested — live GPU inference is pending user-side
+weights + Docker image builds. Phase 5 **grasp_pose_planner** antipodal planner is implemented
+(robot-agnostic planner + `Hand10DoF` adapter; real 10-DoF preshape mapping still TODO).
 
 ## Directory Layout
 ```
@@ -38,7 +40,7 @@ Heavy ops (Scene analysis, Grasp planning) use ROS 2 Action Servers to avoid blo
 ## Host + Docker Hybrid
 - **Host runs**: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO (Phase 1-3 + fusion + infra)
 - **Docker runs**: GPU-heavy Python ML nodes (Phase 4) — dependency isolation for PyTorch/kaolin/nvdiffrast stacks
-- Services in `docker/docker-compose.yml`: `foundationpose`, `cosypose`, `sam2`, `bundlesdf`
+- Services in `docker/docker-compose.yml`: `foundationpose`, `cosypose`, `megapose`, `sam2`, `bundlesdf` (cosypose and megapose share the `cosypose-runtime` stage)
 - Image: `perspective_grasp/ml-base` built from `docker/Dockerfile` (CUDA 12.4 + ROS 2 Jazzy base + compiled `perception_msgs`)
 - Compose context = repo root, so volume paths inside `docker-compose.yml` reference `../packages/phase4_refinement/<pkg>`
 - `network_mode: host` + `ipc: host` so DDS talks to host nodes directly
@@ -101,8 +103,8 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 - **Phase 1**: `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator`
 - **Phase 2 (Fusion)**: `cross_camera_associator`, `pcl_merge_node` (69 gtests / 8 binaries; node lib split so smoke tests link class without `main()`)
 - **Phase 3 (Filtering)**: `pose_filter_cpp` (SE(3) IEKF), `pose_graph_smoother` (GTSAM, optional)
-- **Phase 4 (Refinement)**: `isaac_foundationpose_tracker` (done — backends + Docker), `sam2_instance_segmentor` (done), `megapose_ros2_wrapper` (stub), `cosypose_scene_optimizer` (stub), `bundlesdf_unknown_tracker` (stub)
-- **Phase 5 (Manipulation, stub)**: `grasp_pose_planner`
+- **Phase 4 (Refinement)**: all 5 shipping — `isaac_foundationpose_tracker`, `sam2_instance_segmentor` (live-verified), `cosypose_scene_optimizer` (LifecycleNode + `analyze_scene` action), `megapose_ros2_wrapper`, `bundlesdf_unknown_tracker`. Each has pluggable real+mock backends + dedicated Docker stage + multi-cam fan-out
+- **Phase 5 (Manipulation)**: `grasp_pose_planner` — antipodal planner + `Hand10DoF` adapter; finger-joint preshape mapping is a TODO
 - **Infra**: `perception_meta_controller`, `perception_debug_visualizer`, `multi_camera_calibration`
 
 ## Code Conventions
@@ -160,7 +162,7 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 Guidance for Claude working in this repo. These supplement the top-level system prompt.
 
 - **Verify before trusting memory.** Memory files under `/home/junho/.claude/projects/-home-junho-ros2-ws-perspective-ws-src-perspective-grasp/memory/` are point-in-time snapshots. Before citing package counts, file paths, or dep status from memory, verify against the current tree (`ls`, `grep`, `git log`).
-- **Phase 4 status is mixed.** SAM2 and FoundationPose are fully wired (real + mock backends, Docker stages, multi-cam fan-out). MegaPose / CosyPose / BundleSDF are still stubs — flag those as needing implementation if the user asks to run them.
+- **Phase 4 is code-complete.** All 5 nodes (SAM2, FoundationPose, CosyPose, MegaPose, BundleSDF) ship pluggable real+mock backends, Docker stages, and multi-cam fan-out. SAM2 is live-verified; the other 4 are mock-smoke-tested — if the user asks to "implement X", flag that it is already shipping and ask whether they want tuning, live-run help, or a specific feature on top. Real GPU inference is pending user-side Docker image builds + weights/meshes.
 - **Host vs Docker.** Before editing a Phase 4 node, remember it runs inside the `ml-base` container. Changes to `perception_msgs` require rebuilding the `msgs-builder` stage — `docker compose build` after editing messages.
 - **Build incrementally.** Prefer `colcon build --packages-select <pkg>` over full `build.sh` when iterating on one package — much faster. Only use `build.sh` when dependency order matters (touching `perception_msgs` or `teaser_icp_hybrid_registrator`).
 - **Controller workspace is separate.** Do not add code deps on `/home/junho/ros2_ws/ur5e_ws/` — only TF2 frames and action interfaces cross the boundary. If a change seems to require coupling, flag it before implementing.
