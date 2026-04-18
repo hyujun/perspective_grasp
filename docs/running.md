@@ -8,10 +8,14 @@ How to launch the perception stack on the host, the ML nodes in Docker, and how 
 
 ```bash
 cd ~/ros2_ws/perspective_ws
+source /opt/ros/jazzy/setup.bash
 source install/setup.bash
+source .venv/bin/activate    # workspace venv — required for any Python-backed node
 ```
 
-All commands below assume the workspace is built and sourced. Build instructions: [build.md](build.md).
+All commands below assume the workspace is built and all three layers are sourced. Build instructions: [build.md](build.md).
+
+> **Why the venv matters at runtime.** Host-side pip deps (`ultralytics` used by `yolo_pcl_cpp_tracker`) live in `<workspace>/.venv`, not in `~/.local` or `/usr/lib/python3/dist-packages`. Without the venv active, `ros2 launch yolo_pcl_cpp_tracker tracker.launch.py` (and any launch file that spins it up, including `perception_system.launch.py`) crashes with `ModuleNotFoundError: No module named 'ultralytics'`. Docker-hosted Phase 4 nodes are unaffected — they use the venv inside the container image.
 
 ## Quick start — single camera
 

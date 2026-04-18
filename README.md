@@ -56,10 +56,11 @@ git clone https://github.com/hyujun/perspective_grasp.git
 cd perspective_grasp && ./scripts/install_host.sh
 # If ROS 2 Jazzy is already present, use scripts/install_dependencies.sh instead.
 
-# 3. Build the workspace
+# 3. Build the workspace (creates ~/ros2_ws/perspective_ws/.venv during install step)
 cd ~/ros2_ws/perspective_ws
 ./src/perspective_grasp/build.sh
 source install/setup.bash
+source .venv/bin/activate            # required for any Python-backed node (ultralytics, etc.)
 
 # 4. (Optional) Build Phase 4 Docker images
 cd src/perspective_grasp
@@ -68,6 +69,8 @@ docker compose -f docker/docker-compose.yml build
 # 5. Launch
 ros2 launch perception_bringup perception_system.launch.py
 ```
+
+> Host-side Python deps (`ultralytics`) are installed into the workspace venv at `~/ros2_ws/perspective_ws/.venv`, NOT into `~/.local` or system site-packages. Source `.venv/bin/activate` before `ros2 launch` / `ros2 run`. `build.sh` auto-activates it during the build itself. See [docs/installation.md#python-venv](docs/installation.md#python-venv).
 
 Full instructions: [docs/installation.md](docs/installation.md) → [docs/build.md](docs/build.md) → [docs/running.md](docs/running.md).
 

@@ -6,6 +6,8 @@ Covers compiling the colcon workspace and rebuilding Docker images.
 
 [build.sh](../build.sh) wraps `colcon build` and phases the compile in 4 steps so inter-package dependencies resolve cleanly. It uses `$(nproc) - 2` parallel workers.
 
+`build.sh` auto-activates the workspace Python venv at `<workspace>/.venv` if one exists (created by [scripts/install_host.sh](../scripts/install_host.sh) or [scripts/install_dependencies.sh](../scripts/install_dependencies.sh)). This makes `ament_python` scripts stamp venv-python into their shebangs and ensures pip-installed deps like `ultralytics` are on `sys.path` when colcon runs its tests. `--clean` does **not** wipe `.venv`.
+
 ```bash
 cd ~/ros2_ws/perspective_ws
 
@@ -15,11 +17,12 @@ cd ~/ros2_ws/perspective_ws
 # Release
 ./src/perspective_grasp/build.sh Release
 
-# Clean first (wipes build/install/log)
+# Clean first (wipes build/install/log — NOT .venv)
 ./src/perspective_grasp/build.sh --clean
 ./src/perspective_grasp/build.sh --clean Release
 
 source install/setup.bash
+source .venv/bin/activate   # also activate the venv for runtime
 ```
 
 ## Build order
@@ -35,10 +38,12 @@ source install/setup.bash
 
 ## Single-package build
 
-When iterating on one package, skip `build.sh`:
+When iterating on one package, skip `build.sh`. Activate the workspace venv first so `ament_python` scripts pick up venv-python as their interpreter:
 
 ```bash
 cd ~/ros2_ws/perspective_ws
+source /opt/ros/jazzy/setup.bash
+source .venv/bin/activate              # if using host-side Python deps (e.g. ultralytics)
 colcon build --packages-select <package_name>
 source install/setup.bash
 ```

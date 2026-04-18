@@ -40,7 +40,7 @@ The script is idempotent and covers:
 4. C++ system libs (Eigen3, PCL, OpenCV, Ceres)
 5. C++ from source (TEASER++, manif)
 6. GTSAM (via `ppa:borglab/gtsam-release-4.2`)
-7. Python: `ultralytics` (YOLO)
+7. Python venv at `~/ros2_ws/perspective_ws/.venv` (sibling to `build/install/log`) with `ultralytics` installed
 8. Docker + `nvidia-container-toolkit`
 
 > If the NVIDIA driver was installed on this run, **reboot** and re-run the script to pick up from the next step.
@@ -57,7 +57,23 @@ chmod +x scripts/install_dependencies.sh
 ./scripts/install_dependencies.sh
 ```
 
-Installs ROS 2 packages, system libs, TEASER++, manif, GTSAM, and ultralytics. Does **not** touch the NVIDIA driver, CUDA, or Docker.
+Installs ROS 2 packages, system libs, TEASER++, manif, GTSAM, and ultralytics (into the workspace venv). Does **not** touch the NVIDIA driver, CUDA, or Docker.
+
+## Python venv
+
+Both install scripts create a Python virtual environment at `~/ros2_ws/perspective_ws/.venv` (alongside the colcon `build/install/log` directories) using `--system-site-packages`, and install host-side pip packages (`ultralytics`) there. This keeps pip-installed Python deps isolated from `~/.local` and `/usr/lib/python3/dist-packages`, while leaving ROS 2's apt-installed bindings (`rclpy`, `cv_bridge`, numpy 1.26.4) visible.
+
+> **You must activate the venv before building (optional) or running any Python-backed node.** `build.sh` auto-activates it if present; for manual `ros2 launch` / `ros2 run`, source it yourself:
+>
+> ```bash
+> source /opt/ros/jazzy/setup.bash
+> source ~/ros2_ws/perspective_ws/install/setup.bash
+> source ~/ros2_ws/perspective_ws/.venv/bin/activate
+> ```
+>
+> Without the venv active, nodes that `import ultralytics` (e.g. `yolo_pcl_cpp_tracker`) will fail with `ModuleNotFoundError`.
+
+The venv pins `numpy<2` so it stays ABI-compatible with `cv_bridge` (which was compiled against apt's numpy 1.26.4). `opencv-python` from PyPI is explicitly **not** installed — the ROS 2 stack already provides `cv2` via `ros-jazzy-cv-bridge`, and installing a second copy causes load-order conflicts.
 
 ## Docker images (Phase 4 ML stack)
 
