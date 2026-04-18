@@ -61,8 +61,42 @@ Offline executable that loads saved data, runs per-camera hand-eye solving, and 
 - **Optional**: Ceres Solver (for joint optimization, controlled by `HAS_CERES` flag)
 - **Python**: `rclpy`, `cv_bridge`, `scipy`
 
+## Library targets
+
+`calibration_lib` (`src/{charuco_detector,hand_eye_solver,joint_optimizer}.cpp`) is the
+single shared library used by the offline tool and the test binaries. Pure helpers live
+in [`include/multi_camera_calibration/detail/`](include/multi_camera_calibration/detail/):
+
+| Header | Contents | Tested in |
+|---|---|---|
+| `detail/pose_converters.hpp` | `isometryToRvecTvec`, `rvecTvecToIsometry` (Eigen ↔ OpenCV Rodrigues) | `test_pose_converters` |
+| `detail/pose6d.hpp` | `Pose6D` 6-DoF [angle_axis, translation] struct (Ceres-independent) | `test_pose_converters` |
+
 ## Build
 
 ```bash
 colcon build --packages-select multi_camera_calibration
 ```
+
+## Tests
+
+`ament_cmake_gtest` — 29 cases across 4 binaries:
+
+| Binary | Cases | What it covers |
+|---|---:|---|
+| `test_hand_eye_solver` | 4 | Eye-in-hand / eye-to-hand on synthetic data, sample-count + size-mismatch validation |
+| `test_pose_converters` | 13 | Isometry ↔ rvec/tvec round-trips (50 random samples) + `Pose6D::fromIsometry`/`toIsometry` round-trips, axis-angle magnitude, small-angle branch |
+| `test_charuco_detector` | 9 | All 17 dictionary names parse (and unknown throws), empty/blank image returns failure, full rendered board detects with low reprojection error, grayscale input, `min_corners` threshold respected |
+| `test_joint_optimizer` | 3 (+2 gated) | `isAvailable()` matches build flag, empty samples fail, Ceres-stub message. Convergence + missing-intrinsics tests run when `HAS_CERES` is defined |
+
+```bash
+colcon test --packages-select multi_camera_calibration
+colcon test-result --verbose
+
+# Filter inside a single binary
+./build/multi_camera_calibration/test_charuco_detector --gtest_filter=CharucoDetectorTest.Detects*
+```
+
+The `JointOptimizer` convergence tests use a CMake-time `HAS_CERES` define (set when
+`find_package(Ceres QUIET)` succeeds) — they are compiled out, not skipped at runtime,
+on boxes without `libceres-dev`. Stub-mode tests always run.
