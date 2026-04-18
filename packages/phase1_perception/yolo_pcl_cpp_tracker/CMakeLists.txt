@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(yolo_pcl_cpp_tracker VERSION 0.1.0 LANGUAGES C CXX)
 
+# Silence PCL's FindFLANN.cmake CMP0144 warning. Plain cmake_policy(SET) does not
+# survive PCLConfig.cmake's own cmake_minimum_required, so use the *_DEFAULT_*
+# variant which propagates into nested find_package calls.
+if(POLICY CMP0144)
+  set(CMAKE_POLICY_DEFAULT_CMP0144 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -Wpedantic)

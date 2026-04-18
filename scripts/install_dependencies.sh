@@ -90,12 +90,25 @@ else
 fi
 
 # ---- 3. GTSAM (enables HAS_GTSAM in pose_graph_smoother) ----
+# Built from source: borglab PPA does not publish for Ubuntu 24.04 (noble).
 echo ""
-echo "=== [3/4] GTSAM ==="
-if ! dpkg -l | grep -q libgtsam-dev; then
-    sudo add-apt-repository -y ppa:borglab/gtsam-release-4.2
-    sudo apt update
-    sudo apt install -y libgtsam-dev libgtsam-unstable-dev
+echo "=== [3/4] GTSAM (from source) ==="
+if [ ! -f /usr/local/include/gtsam/base/Matrix.h ] && ! ldconfig -p | grep -q libgtsam.so; then
+    echo "Building GTSAM 4.2.0..."
+    GTSAM_DIR=/tmp/gtsam
+    [ ! -d "$GTSAM_DIR" ] && git clone --depth 1 --branch 4.2.0 https://github.com/borglab/gtsam.git "$GTSAM_DIR"
+    (
+        cd "$GTSAM_DIR" && mkdir -p build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release \
+                 -DGTSAM_BUILD_TESTS=OFF \
+                 -DGTSAM_BUILD_EXAMPLES_ALWAYS=OFF \
+                 -DGTSAM_BUILD_UNSTABLE=ON \
+                 -DGTSAM_USE_SYSTEM_EIGEN=ON \
+                 -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF
+        make -j"$(nproc)"
+        sudo make install
+        sudo ldconfig
+    )
 else
     echo "GTSAM already installed."
 fi

@@ -21,7 +21,10 @@
 #   --test    After build, run colcon test on packages that ship tests
 #   Release | Debug | RelWithDebInfo | MinSizeRel   (build type; default RelWithDebInfo)
 # =============================================================================
-set -euo pipefail
+set -eo pipefail
+# Note: `set -u` is intentionally omitted — colcon's generated setup.bash
+# references COLCON_TRACE and other env vars without defaults, which would
+# trip nounset every time we re-source after a phase.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
