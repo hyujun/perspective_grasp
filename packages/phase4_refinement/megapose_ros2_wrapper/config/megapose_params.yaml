@@ -34,3 +34,7 @@
     model_name:           "megapose-1.0-RGB-multi-hypothesis"
     score_threshold:      0.3
     device:               "cuda"
+    # happypose load_named_model knobs — tune for VRAM headroom on
+    # smaller GPUs. Defaults match upstream (n_workers=4, bsz_images=128).
+    n_workers:            4
+    bsz_images:           128

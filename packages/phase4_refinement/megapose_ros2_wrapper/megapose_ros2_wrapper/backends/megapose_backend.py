@@ -75,6 +75,16 @@ class MegaPoseBackend(BaseMegaBackend):
             node.declare_parameter('device', 'cuda')
             .get_parameter_value().string_value
         )
+        # happypose load_named_model defaults: n_workers=4, bsz_images=128.
+        # Surfaced here for 8GB VRAM tuning without a container rebuild.
+        self._n_workers: int = (
+            node.declare_parameter('n_workers', 4)
+            .get_parameter_value().integer_value
+        )
+        self._bsz_images: int = (
+            node.declare_parameter('bsz_images', 128)
+            .get_parameter_value().integer_value
+        )
 
         self._torch: Any = None
         self._estimator: Any = None
@@ -125,9 +135,17 @@ class MegaPoseBackend(BaseMegaBackend):
                 f"model_name '{self._model_name}' not in happypose NAMED_MODELS "
                 f"(available: {sorted(NAMED_MODELS)})"
             )
-        self._inference_params = dict(
-            NAMED_MODELS[self._model_name]['inference_parameters'],
-        )
+        named = NAMED_MODELS[self._model_name]
+        # happypose marks RGBD / ICP-refined variants with requires_depth=True.
+        # This wrapper consumes RGB only — fail fast at load() with a clear
+        # message rather than crash inside inference on a missing depth tensor.
+        if named.get('requires_depth', False):
+            raise RuntimeError(
+                f"model_name '{self._model_name}' requires depth input, but "
+                f"this wrapper is RGB-only. Pick an RGB-only NAMED_MODELS "
+                f"entry (e.g. 'megapose-1.0-RGB-multi-hypothesis')."
+            )
+        self._inference_params = dict(named['inference_parameters'])
 
         rigid_objects, labels = _build_rigid_objects(
             self._mesh_dir, self._mesh_units, RigidObject,
@@ -145,6 +163,8 @@ class MegaPoseBackend(BaseMegaBackend):
         )
         self._estimator = load_named_model(
             self._model_name, object_dataset,
+            n_workers=self._n_workers,
+            bsz_images=self._bsz_images,
         ).to(self._device)
 
         self._loaded = True
@@ -194,11 +214,17 @@ class MegaPoseBackend(BaseMegaBackend):
         obs = self._observation_cls.from_numpy(
             rgb=image_rgb, K=np.asarray(K, dtype=np.float64),
         )
-        predictions, _extras = self._estimator.run_inference_pipeline(
+        predictions, extras = self._estimator.run_inference_pipeline(
             observation=obs.to(self._device),
             detections=detections_tensor.to(self._device),
+            run_detector=False,
             **self._inference_params,
         )
+
+        timing = extras.get('timing_str') if isinstance(extras, dict) else None
+        if timing:
+            self._node.get_logger().debug(f'megapose timings: {timing}')
+
         return self._predictions_to_results(predictions, kept)
 
     # ------------------------------------------------------------------

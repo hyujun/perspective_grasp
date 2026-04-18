@@ -202,12 +202,17 @@ class CosyPoseBackend(BaseSceneBackend):
             rgb=image_rgb, K=np.asarray(K, dtype=np.float64),
         )
 
-        predictions, _extras = self._estimator.run_inference_pipeline(
+        predictions, extras = self._estimator.run_inference_pipeline(
             observation=obs.to(self._device),
             detections=detections_tensor.to(self._device),
+            run_detector=False,
             n_coarse_iterations=self._n_coarse_iterations,
             n_refiner_iterations=self._n_refiner_iterations,
         )
+
+        timing = extras.get('timing_str') if isinstance(extras, dict) else None
+        if timing:
+            self._node.get_logger().debug(f'cosypose timings: {timing}')
 
         return self._predictions_to_results(predictions, kept)
 
