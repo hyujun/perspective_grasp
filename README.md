@@ -1,421 +1,91 @@
 # perspective_grasp
 
-RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulation system. 17 ROS 2 packages across 5 pipeline phases, supporting 1-3 cameras with config-driven topology.
+RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulation. 17 ROS 2 packages across 5 pipeline phases, supporting 1–3 cameras via config-driven topology.
 
-## Repository Layout
+> **Status.** Phase 1–3 (C++ perception, fusion, filtering) and infra are implemented. Phase 4 ML nodes (FoundationPose, MegaPose, CosyPose, SAM2, BundleSDF) and Phase 5 (`grasp_pose_planner`) ship as **stubs** — launch files and package skeletons, not working inference.
+
+## Documentation
+
+| Doc | Covers |
+|-----|--------|
+| [docs/installation.md](docs/installation.md) | OS setup, ROS 2 Jazzy, CUDA, TEASER++/GTSAM, Docker |
+| [docs/build.md](docs/build.md) | `build.sh`, single-package builds, Docker image rebuilds |
+| [docs/running.md](docs/running.md) | Launch by phase, 1/2/3-camera configs, Phase 4 in Docker, pipeline modes |
+| [docs/architecture.md](docs/architecture.md) | Topic / TF / QoS reference, design principles |
+
+## Repository layout
 
 ```
 perspective_grasp/
 ├── build.sh                      # Phased colcon wrapper
 ├── docker/                       # Dockerfile + docker-compose.yml (Phase 4 ML stack)
-├── scripts/                      # Host install scripts
+├── scripts/                      # install_host.sh, install_dependencies.sh
+├── docs/                         # Installation / build / running / architecture
 └── packages/                     # colcon discovers recursively
     ├── interfaces/               # perception_msgs
     ├── bringup/                  # perception_bringup (system launches + camera_config*.yaml)
     ├── phase1_perception/        # yolo_pcl_cpp_tracker, teaser_icp_hybrid_registrator
     ├── phase2_fusion/            # cross_camera_associator, pcl_merge_node
     ├── phase3_filtering/         # pose_filter_cpp, pose_graph_smoother
-    ├── phase4_refinement/        # foundationpose, megapose, cosypose, sam2, bundlesdf
-    ├── phase5_manipulation/      # grasp_pose_planner
+    ├── phase4_refinement/        # foundationpose, megapose, cosypose, sam2, bundlesdf (stubs)
+    ├── phase5_manipulation/      # grasp_pose_planner (stub)
     └── infrastructure/           # meta_controller, debug_visualizer, multi_camera_calibration
 ```
 
-## Architecture
+## Architecture at a glance
 
-**Vision Push, Controller Pull** — Vision system broadcasts TF2 transforms continuously; the robot controller does `lookupTransform()` at its own rate. Heavy operations (scene analysis, grasp planning) use ROS 2 Action Servers to avoid blocking the control loop.
+**Vision Push, Controller Pull.** Vision broadcasts TF2 continuously; the controller does `lookupTransform()` at its own rate. Heavy ops (scene analysis, grasp planning) are ROS 2 Action Servers so the control loop never blocks. C++ nodes and YOLO run on the host; GPU-heavy Python ML nodes run in Docker containers. See [docs/architecture.md](docs/architecture.md) for the full pipeline diagram.
 
-```
-                         ┌──────────────────────────────────────────┐
-                         │          Camera Drivers (1-3)            │
-                         │     RGB + Depth + CameraInfo per cam     │
-                         └──────────┬───────────────────────────────┘
-                                    │
-                    ┌───────────────▼───────────────┐
-                    │     Phase 1: Detection &      │
-                    │     Pose Estimation            │
-                    │  ┌─────────────────────────┐   │
-                    │  │  yolo_pcl_cpp_tracker    │   │
-                    │  │  (YOLO + ByteTrack +     │   │
-                    │  │   TEASER++ / ICP)        │   │
-                    │  └────────────┬─────────────┘   │
-                    └───────────────┼──────────────────┘
-                                    │ per-camera raw poses
-               ┌────────────────────▼────────────────────┐
-               │  Phase 2: Multi-Camera Fusion           │
-               │  ┌────────────────┐  ┌───────────────┐  │
-               │  │ cross_camera_  │  │ pcl_merge_    │  │
-               │  │ associator     │  │ node          │  │
-               │  │ (Hungarian +   │  │ (point cloud  │  │
-               │  │  Union-Find)   │  │  merging)     │  │
-               │  └───────┬────────┘  └───────────────┘  │
-               └──────────┼──────────────────────────────┘
-                          │ associated poses (global IDs)
-               ┌──────────▼──────────────────────────────┐
-               │  Phase 3: Filtering & Smoothing         │
-               │  ┌────────────────┐  ┌───────────────┐  │
-               │  │ pose_filter_   │  │ pose_graph_   │  │
-               │  │ cpp            │  │ smoother      │  │
-               │  │ (SE(3) IEKF)   │  │ (GTSAM opt.)  │  │
-               │  └───────┬────────┘  └───────┬───────┘  │
-               └──────────┼───────────────────┼──────────┘
-                          │                   │
-               ┌──────────▼───────────────────▼──────────┐
-               │  Phase 4: Refinement (On-Demand)        │
-               │  ┌──────────────┐  ┌─────────────────┐  │
-               │  │ foundationpose│  │ cosypose_scene_ │  │
-               │  │ _tracker     │  │ optimizer       │  │
-               │  ├──────────────┤  ├─────────────────┤  │
-               │  │ megapose_    │  │ sam2_instance_  │  │
-               │  │ ros2_wrapper │  │ segmentor       │  │
-               │  ├──────────────┤  └─────────────────┘  │
-               │  │ bundlesdf_   │                       │
-               │  │ unknown_     │                       │
-               │  │ tracker      │                       │
-               │  └──────────────┘                       │
-               └─────────────────────────────────────────┘
-                          │
-               ┌──────────▼──────────────────────────────┐
-               │  Phase 5: Grasp Planning                │
-               │  ┌──────────────────────────────────┐   │
-               │  │ grasp_pose_planner               │   │
-               │  │ (Action Server → UR5e + 10-DoF)  │   │
-               │  └──────────────────────────────────┘   │
-               └─────────────────────────────────────────┘
+| Phase | Role | Nodes |
+|-------|------|-------|
+| 1 | Detection + 6D pose estimation | `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator` |
+| 2 | Multi-camera fusion | `cross_camera_associator`, `pcl_merge_node` |
+| 3 | Filtering + smoothing | `pose_filter_cpp`, `pose_graph_smoother` |
+| 4 | Refinement (on-demand, stubs) | FoundationPose, MegaPose, CosyPose, SAM2, BundleSDF |
+| 5 | Grasp planning (stub) | `grasp_pose_planner` |
 
-     Orchestration: perception_meta_controller (NORMAL / HIGH_PRECISION / SCENE_ANALYSIS)
-     Debug:         perception_debug_visualizer (OpenCV overlay)
-     Calibration:   multi_camera_calibration (ChArUco + hand-eye + Ceres)
-```
-
-## Packages
-
-### Messages & Interfaces
-
-| Package | Description |
-|---------|-------------|
-| [perception_msgs](packages/interfaces/perception_msgs/) | Custom message, service, and action definitions (11 msgs, 1 srv, 2 actions) |
-
-### System Bringup
-
-| Package | Description |
-|---------|-------------|
-| [perception_bringup](packages/bringup/perception_bringup/) | System-level launches (`perception_system.launch.py`, `phase1_bringup.launch.py`) and shared `camera_config*.yaml` |
-
-### Phase 1: Detection & Pose Estimation
-
-| Package | Language | Description |
-|---------|----------|-------------|
-| [yolo_pcl_cpp_tracker](packages/phase1_perception/yolo_pcl_cpp_tracker/) | C++ / Python | YOLO + ByteTrack detection with ICP-based 6D pose estimation |
-| [teaser_icp_hybrid_registrator](packages/phase1_perception/teaser_icp_hybrid_registrator/) | C++ | Library: TEASER++ global registration + ICP local refinement |
-
-### Phase 2: Multi-Camera Fusion
-
-| Package | Language | Description |
-|---------|----------|-------------|
-| [cross_camera_associator](packages/phase2_fusion/cross_camera_associator/) | C++ | Hungarian algorithm + Union-Find for cross-camera object matching |
-| [pcl_merge_node](packages/phase2_fusion/pcl_merge_node/) | C++ | Point cloud merging, filtering, deduplication from multiple cameras |
-
-### Phase 3: Filtering & Smoothing
-
-| Package | Language | Description |
-|---------|----------|-------------|
-| [pose_filter_cpp](packages/phase3_filtering/pose_filter_cpp/) | C++ | SE(3) IEKF for multi-source pose fusion with outlier rejection |
-| [pose_graph_smoother](packages/phase3_filtering/pose_graph_smoother/) | C++ | Sliding-window pose graph optimization (GTSAM, optional) |
-
-### Phase 4: Refinement (On-Demand)
-
-| Package | Language | Description |
-|---------|----------|-------------|
-| [isaac_foundationpose_tracker](packages/phase4_refinement/isaac_foundationpose_tracker/) | Python | FoundationPose zero-shot 6D pose tracker (stub) |
-| [megapose_ros2_wrapper](packages/phase4_refinement/megapose_ros2_wrapper/) | Python | MegaPose zero-shot 6D pose estimation (stub) |
-| [bundlesdf_unknown_tracker](packages/phase4_refinement/bundlesdf_unknown_tracker/) | Python | BundleSDF neural implicit surface tracking for unknown objects (stub) |
-| [sam2_instance_segmentor](packages/phase4_refinement/sam2_instance_segmentor/) | Python | SAM2 instance segmentation (stub) |
-| [cosypose_scene_optimizer](packages/phase4_refinement/cosypose_scene_optimizer/) | Python | CosyPose scene-level joint pose optimization (stub) |
-
-### Phase 5: Grasp Planning
-
-| Package | Language | Description |
-|---------|----------|-------------|
-| [grasp_pose_planner](packages/phase5_manipulation/grasp_pose_planner/) | Python | Grasp pose action server for UR5e + 10-DoF hand (stub) |
-
-### Infrastructure
-
-| Package | Language | Description |
-|---------|----------|-------------|
-| [perception_meta_controller](packages/infrastructure/perception_meta_controller/) | C++ | Pipeline mode orchestrator (NORMAL / HIGH_PRECISION / SCENE_ANALYSIS) |
-| [perception_debug_visualizer](packages/infrastructure/perception_debug_visualizer/) | C++ | Real-time OpenCV debug overlay |
-| [multi_camera_calibration](packages/infrastructure/multi_camera_calibration/) | C++ / Python | Hand-eye calibration with ChArUco + optional Ceres joint optimization |
-
-## Pipeline Modes
-
-| Mode | Description | Active Nodes |
-|------|-------------|-------------|
-| **NORMAL** | Real-time tracking | YOLO tracker + ICP + pose filter |
-| **HIGH_PRECISION** | High-accuracy manipulation | NORMAL + FoundationPose + pose graph smoother |
-| **SCENE_ANALYSIS** | Scene understanding | YOLO tracker + SAM2 + CosyPose + pose filter |
-
-## Multi-Camera Support
-
-1-3 cameras via config-driven topology. Single YAML defines camera count and type.
-
-- **Config**: `packages/bringup/perception_bringup/config/camera_config.yaml` (3-cam), `camera_config_1cam.yaml`, `camera_config_2cam.yaml`
-- **Per-camera**: Nodes namespaced as `/cam0/`, `/cam1/`, `/cam2/`
-- **Fusion**: `cross_camera_associator` matches objects across cameras
-- **Point cloud merge**: `pcl_merge_node` merges eye-to-hand depth clouds
-- **Calibration**: `multi_camera_calibration` with ChArUco + optional Ceres joint optimization
-
-## Prerequisites
-
-- **OS**: Ubuntu 24.04
-- **GPU**: NVIDIA GPU (CUDA 12.4+, 8GB+ VRAM recommended)
-- **ROS 2**: Jazzy Jalisco
-- **Docker**: Required for ML nodes (FoundationPose, SAM2, CosyPose, BundleSDF)
-
-## Installation
-
-### Option A: Fresh Ubuntu 24.04 Setup (Full)
-
-처음부터 환경을 구성하는 경우. NVIDIA 드라이버, CUDA, ROS 2, 모든 의존성, Docker를 한번에 설치합니다.
+## Quick start
 
 ```bash
-# 1. Clone the repository
+# 1. Clone
 mkdir -p ~/ros2_ws/perspective_ws/src
 cd ~/ros2_ws/perspective_ws/src
 git clone https://github.com/hyujun/perspective_grasp.git
 
-# 2. Run the full host setup script
-cd perspective_grasp
-chmod +x scripts/install_host.sh
-./scripts/install_host.sh
-# ⚠ NVIDIA 드라이버가 새로 설치된 경우 리부팅 후 다시 실행
-```
+# 2. Install host deps (fresh Ubuntu 24.04)
+cd perspective_grasp && ./scripts/install_host.sh
+# If ROS 2 Jazzy is already present, use scripts/install_dependencies.sh instead.
 
-이 스크립트가 설치하는 항목:
-1. NVIDIA Driver 560 + CUDA Toolkit 12.4
-2. ROS 2 Jazzy Desktop
-3. ROS 2 패키지 (tf2, cv-bridge, pcl-conversions 등)
-4. C++ 라이브러리 (Eigen3, PCL, OpenCV, Ceres, TEASER++, manif)
-5. GTSAM (PPA)
-6. Python: ultralytics (YOLO)
-7. Docker + nvidia-container-toolkit
+# 3. Build the workspace
+cd ~/ros2_ws/perspective_ws
+./src/perspective_grasp/build.sh
+source install/setup.bash
 
-### Option B: ROS 2 Jazzy Already Installed (Dependencies Only)
-
-ROS 2 Jazzy가 이미 설치된 환경에서 추가 의존성만 설치합니다.
-
-```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
-chmod +x scripts/install_dependencies.sh
-./scripts/install_dependencies.sh
-```
-
-### Docker Images (ML Nodes)
-
-GPU-heavy ML 노드(FoundationPose, CosyPose, SAM2, BundleSDF)는 Docker에서 실행됩니다.
-
-```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
-
-# Build all ML images (compose lives in docker/ now)
+# 4. (Optional) Build Phase 4 Docker images
+cd src/perspective_grasp
 docker compose -f docker/docker-compose.yml build
 
-# (Optional) Model weights — 환경변수 또는 models/ 디렉토리에 배치
-export FOUNDATIONPOSE_WEIGHTS=/path/to/foundationpose/weights
-export SAM2_WEIGHTS=/path/to/sam2/weights
-export COSYPOSE_WEIGHTS=/path/to/cosypose/weights
-export BUNDLESDF_WEIGHTS=/path/to/bundlesdf/weights
-```
-
-## Build
-
-```bash
-cd ~/ros2_ws/perspective_ws
-
-# Full build (respects dependency order)
-./src/perspective_grasp/build.sh
-
-# Release build
-./src/perspective_grasp/build.sh Release
-
-# Clean build
-./src/perspective_grasp/build.sh --clean
-
-# Single package build
-colcon build --packages-select <package_name>
-
-# Source after build
-source install/setup.bash
-```
-
-### Build Order
-
-1. `perception_msgs` (all packages depend on this)
-2. `teaser_icp_hybrid_registrator` (library)
-3. `cross_camera_associator` + `pcl_merge_node` (multi-camera infrastructure)
-4. All remaining packages (parallel safe)
-
-## Running
-
-### Quick Start — Single Camera Perception
-
-```bash
-# Terminal 1: Source workspace
-cd ~/ros2_ws/perspective_ws
-source install/setup.bash
-
-# Launch full perception pipeline (YOLO tracker + pose filter + fusion + debug visualizer)
+# 5. Launch
 ros2 launch perception_bringup perception_system.launch.py
 ```
 
-### Launch by Phase
+Full instructions: [docs/installation.md](docs/installation.md) → [docs/build.md](docs/build.md) → [docs/running.md](docs/running.md).
 
-```bash
-source ~/ros2_ws/perspective_ws/install/setup.bash
+## Prerequisites
 
-# Phase 1: Detection & Pose Estimation (per-camera)
-ros2 launch yolo_pcl_cpp_tracker tracker.launch.py
+- Ubuntu 24.04, NVIDIA GPU (driver 560+, CUDA 12.4+)
+- ROS 2 Jazzy Jalisco
+- Docker (required only for Phase 4 ML nodes)
 
-# Phase 1 (multi-camera): Full Phase 1 bringup
-ros2 launch perception_bringup phase1_bringup.launch.py
+## Pipeline modes
 
-# Phase 2: Multi-Camera Fusion
-ros2 launch cross_camera_associator associator.launch.py
-ros2 launch pcl_merge_node merge.launch.py
+Switched at runtime via `perception_meta_controller`:
 
-# Phase 3: Filtering & Smoothing
-ros2 launch pose_filter_cpp pose_filter.launch.py
-ros2 launch pose_graph_smoother smoother.launch.py
-
-# Phase 5: Grasp Planning (Action Server)
-ros2 launch grasp_pose_planner grasp_planner.launch.py
-
-# Infrastructure
-ros2 launch perception_meta_controller meta_controller.launch.py
-ros2 launch perception_debug_visualizer debug_visualizer.launch.py
-ros2 launch multi_camera_calibration calibration_collect.launch.py
-```
-
-### Phase 4: ML Nodes (Docker)
-
-```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
-
-# Start individual ML service
-docker compose -f docker/docker-compose.yml up foundationpose -d
-docker compose -f docker/docker-compose.yml up sam2 -d
-docker compose -f docker/docker-compose.yml up cosypose -d
-docker compose -f docker/docker-compose.yml up bundlesdf -d
-
-# Start all ML nodes
-docker compose -f docker/docker-compose.yml up -d
-
-# View logs
-docker compose -f docker/docker-compose.yml logs -f foundationpose
-
-# Stop all
-docker compose -f docker/docker-compose.yml down
-```
-
-### Camera Configuration
-
-카메라 수에 따라 config 파일을 지정합니다.
-
-```bash
-# Configs live in the perception_bringup share dir; resolve via ros2 pkg
-BRINGUP_CFG=$(ros2 pkg prefix perception_bringup)/share/perception_bringup/config
-
-# 1-camera setup
-ros2 launch perception_bringup perception_system.launch.py \
-    camera_config:=$BRINGUP_CFG/camera_config_1cam.yaml
-
-# 2-camera setup
-ros2 launch perception_bringup perception_system.launch.py \
-    camera_config:=$BRINGUP_CFG/camera_config_2cam.yaml
-
-# 3-camera setup (default)
-ros2 launch perception_bringup perception_system.launch.py \
-    camera_config:=$BRINGUP_CFG/camera_config.yaml
-```
-
-### Pipeline Modes
-
-`perception_meta_controller`를 통해 파이프라인 모드를 전환합니다.
-
-| Mode | Description | Active Nodes |
-|------|-------------|-------------|
-| **NORMAL** | Real-time tracking | YOLO tracker + ICP + pose filter |
-| **HIGH_PRECISION** | High-accuracy manipulation | NORMAL + FoundationPose + pose graph smoother |
-| **SCENE_ANALYSIS** | Scene understanding | YOLO tracker + SAM2 + CosyPose + pose filter |
-
-### Verifying the System
-
-```bash
-# Check running nodes
-ros2 node list
-
-# Check topics are being published
-ros2 topic list
-ros2 topic hz /cam0/yolo_tracker/raw_poses
-
-# Check TF tree
-ros2 run tf2_tools view_frames
-
-# Monitor pose output
-ros2 topic echo /pose_filter/filtered_poses
-```
-
-## Key Topics
-
-### Per-Camera (Namespaced)
-
-| Topic | Type | Description |
-|-------|------|-------------|
-| `/{ns}/yolo/detections` | `DetectionArray` | 2D detections |
-| `/{ns}/yolo_tracker/raw_poses` | `PoseWithMetaArray` | Raw 6D poses |
-
-### Cross-Camera Fusion
-
-| Topic | Type | Description |
-|-------|------|-------------|
-| `/associated/poses` | `AssociatedPoseArray` | Associated poses with global IDs |
-| `/merged/points` | `PointCloud2` | Merged point cloud |
-
-### Downstream (Global)
-
-| Topic | Type | Description |
-|-------|------|-------------|
-| `/pose_filter/filtered_poses` | `PoseWithMetaArray` | IEKF-filtered poses |
-| `/smoother/smoothed_poses` | `PoseWithMetaArray` | Graph-smoothed poses |
-| `/foundationpose/raw_poses` | `PoseWithMetaArray` | FoundationPose output |
-| `/cosypose/optimized_poses` | `PoseWithMetaArray` | Scene-optimized poses |
-| `/sam2/masks` | `SegmentationArray` | Instance segmentation masks |
-| `/meta_controller/active_pipeline` | `PipelineStatus` | Pipeline status |
-
-## TF2 Frame Convention
-
-### Single Camera
-
-- Parent: `camera_color_optical_frame`
-- Child: `object_{track_id}_filtered`
-
-### Multi-Camera
-
-- Per-camera frames: `cam{N}_color_optical_frame`
-- All filtered poses in `ur5e_base_link` frame
-- Static TF: `ur5e_base_link` -> `cam{N}_link` (from calibration)
-
-## Code Conventions
-
-- **C++ Standard**: C++20
-- **Compiler Flags**: `-Wall -Wextra -Wpedantic -Wshadow -Wconversion`
-- **Formatting**: clang-format (Google style with modifications)
-- **Namespace**: `perspective_grasp`
-
-## Key Constraints
-
-- **GPU**: RTX 3070 Ti (8GB VRAM) — only YOLO + one GPU-heavy node at a time
-- **QoS**: BEST_EFFORT + depth 1 for control-path topics
-- **Optional dependencies**: TEASER++ (ICP fallback), Ceres (OpenCV fallback), GTSAM (passthrough)
+| Mode | Active nodes |
+|------|--------------|
+| `NORMAL` | YOLO tracker + ICP + pose filter |
+| `HIGH_PRECISION` | `NORMAL` + FoundationPose + pose graph smoother |
+| `SCENE_ANALYSIS` | YOLO tracker + SAM2 + CosyPose + pose filter |
 
 ## License
 
