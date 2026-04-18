@@ -53,6 +53,29 @@ colcon build --packages-select grasp_pose_planner
 
 > Only fall back to `build.sh` when you touch `perception_msgs` or `teaser_icp_hybrid_registrator` (everything downstream needs rebuilding), or when you add a new package.
 
+## Tests
+
+Unit tests use `ament_cmake_gtest`. Phase 1 (`yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator`) has 29 tests covering the tracker state machine, CAD model loader, point-cloud utilities (`cropToRoi` / `preprocess`), the hybrid registrator (`refineIcp`, `updateConfig`, `align`), and the FPFH feature extractor. Other packages do not yet ship tests.
+
+```bash
+cd ~/ros2_ws/perspective_ws
+
+# Run all tests for Phase 1
+colcon test --packages-select teaser_icp_hybrid_registrator yolo_pcl_cpp_tracker
+
+# Show per-test output (passes + failures)
+colcon test-result --verbose
+
+# Drop into a single binary for gdb / --gtest_filter
+./build/yolo_pcl_cpp_tracker/test_pcl_utils --gtest_filter=CropToRoi.*
+```
+
+Notes:
+
+- Tests do not need a camera, a running ROS graph, or a GPU — they run against synthetic / committed `.pcd` fixtures.
+- `HybridRegistrator::align()` tests are gated behind `HAS_TEASERPP`. When TEASER++ is absent, the test is reported as `SKIPPED`, not failed. Install TEASER++ via [scripts/install_dependencies.sh](../scripts/install_dependencies.sh) to enable them.
+- `yolo_pcl_cpp_tracker` bundles pure-logic code (`cad_model_manager.cpp`, `pcl_utils.cpp`) into a static `yolo_tracker_utils` library that tests link against. Don't re-inline those sources into the executable.
+
 ## Rebuilding Docker images
 
 The ML containers compile `perception_msgs` at image-build time (via a `msgs-builder` stage inside [docker/Dockerfile](../docker/Dockerfile)). **Any change to `perception_msgs` requires rebuilding the image.**

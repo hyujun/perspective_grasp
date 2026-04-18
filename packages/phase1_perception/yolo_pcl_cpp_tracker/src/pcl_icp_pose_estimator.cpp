@@ -1,10 +1,12 @@
 #include "yolo_pcl_cpp_tracker/pcl_icp_pose_estimator.hpp"
 
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/filters/statistical_outlier_removal.h>
+#include <unordered_set>
+
 #include <pcl_conversions/pcl_conversions.h>
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+
+#include "yolo_pcl_cpp_tracker/pcl_utils.hpp"
 
 namespace perspective_grasp {
 
@@ -118,13 +120,16 @@ void PclIcpPoseEstimator::syncCallback(
     seen_ids.insert(det.id);
 
     // Crop point cloud to detection ROI
-    auto scene_crop = cropToRoi(cloud, det.bbox);
+    pcl::PointCloud<pcl::PointXYZ> full_cloud;
+    pcl::fromROSMsg(*cloud, full_cloud);
+    auto scene_crop = pcl_utils::cropToRoi(full_cloud, det.bbox);
     if (!scene_crop || scene_crop->size() < 50) {
       continue;
     }
 
     // Preprocess (voxel grid + outlier removal)
-    auto preprocessed = preprocess(scene_crop);
+    auto preprocessed = pcl_utils::preprocess(
+        scene_crop, voxel_leaf_size_, outlier_mean_k_, outlier_stddev_);
     if (!preprocessed || preprocessed->empty()) {
       continue;
     }
@@ -151,64 +156,6 @@ void PclIcpPoseEstimator::syncCallback(
 
   // Publish results and broadcast TF
   publishResults();
-}
-
-pcl::PointCloud<pcl::PointXYZ>::Ptr PclIcpPoseEstimator::cropToRoi(
-    const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud_msg,
-    const sensor_msgs::msg::RegionOfInterest& roi) const {
-  // Convert ROS message to PCL
-  pcl::PointCloud<pcl::PointXYZ> full_cloud;
-  pcl::fromROSMsg(*cloud_msg, full_cloud);
-
-  auto cropped = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-
-  // For organized point clouds, extract ROI directly
-  if (full_cloud.isOrganized()) {
-    uint32_t x_start = roi.x_offset;
-    uint32_t y_start = roi.y_offset;
-    uint32_t x_end = std::min(x_start + roi.width, full_cloud.width);
-    uint32_t y_end = std::min(y_start + roi.height, full_cloud.height);
-
-    for (uint32_t y = y_start; y < y_end; ++y) {
-      for (uint32_t x = x_start; x < x_end; ++x) {
-        const auto& pt = full_cloud.at(x, y);
-        if (std::isfinite(pt.x) && std::isfinite(pt.y) &&
-            std::isfinite(pt.z) && pt.z > 0.0f) {
-          cropped->push_back(pt);
-        }
-      }
-    }
-  }
-
-  cropped->width = static_cast<uint32_t>(cropped->size());
-  cropped->height = 1;
-  cropped->is_dense = true;
-  return cropped;
-}
-
-pcl::PointCloud<pcl::PointXYZ>::Ptr PclIcpPoseEstimator::preprocess(
-    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) const {
-  // Voxel grid downsampling
-  auto downsampled = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-  pcl::VoxelGrid<pcl::PointXYZ> voxel;
-  voxel.setInputCloud(cloud);
-  float leaf = static_cast<float>(voxel_leaf_size_);
-  voxel.setLeafSize(leaf, leaf, leaf);
-  voxel.filter(*downsampled);
-
-  if (downsampled->empty()) {
-    return downsampled;
-  }
-
-  // Statistical outlier removal
-  auto filtered = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-  pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-  sor.setInputCloud(downsampled);
-  sor.setMeanK(outlier_mean_k_);
-  sor.setStddevMulThresh(outlier_stddev_);
-  sor.filter(*filtered);
-
-  return filtered;
 }
 
 void PclIcpPoseEstimator::estimatePose(

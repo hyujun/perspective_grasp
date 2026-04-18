@@ -36,15 +36,6 @@ class PclIcpPoseEstimator : public rclcpp::Node {
   void cameraInfoCallback(
       const sensor_msgs::msg::CameraInfo::ConstSharedPtr& msg);
 
-  /// Crop point cloud to a 2D bounding box region
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cropToRoi(
-      const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud,
-      const sensor_msgs::msg::RegionOfInterest& roi) const;
-
-  /// Preprocess point cloud: voxel downsample + statistical outlier removal
-  pcl::PointCloud<pcl::PointXYZ>::Ptr preprocess(
-      const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) const;
-
   /// Run ICP (or TEASER+ICP) for a single object and return pose
   void estimatePose(int object_id, const std::string& class_name,
                     const pcl::PointCloud<pcl::PointXYZ>::Ptr& scene_crop);

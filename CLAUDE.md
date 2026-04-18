@@ -4,9 +4,10 @@
 RGB-D camera-based 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation.
 **17 ROS 2 packages** across 5 phases + debug visualizer + multi-camera support + calibration + bringup.
 
-**Current status**: C++ packages (Phase 1-3, fusion, infra) are implemented. Phase 4 ML nodes
-(FoundationPose, MegaPose, CosyPose, SAM2, BundleSDF) and Phase 5 grasp_pose_planner are **stubs**
-— they have launch files and package skeletons, not working inference.
+**Current status**: C++ packages (Phase 1-3, fusion, infra) are implemented. Phase 1 has 29 gtest
+unit tests (tracker state machine, CAD loader, pcl_utils, hybrid registrator, FPFH). Phase 4 ML
+nodes (FoundationPose, MegaPose, CosyPose, SAM2, BundleSDF) and Phase 5 grasp_pose_planner are
+**stubs** — they have launch files and package skeletons, not working inference.
 
 ## Directory Layout
 ```
@@ -67,6 +68,10 @@ colcon build --packages-select <package_name>
 
 # Source after build
 source install/setup.bash
+
+# Run Phase 1 unit tests (29 tests; TEASER++ align tests skip if unavailable)
+colcon test --packages-select teaser_icp_hybrid_registrator yolo_pcl_cpp_tracker
+colcon test-result --verbose
 ```
 
 `build.sh` uses `$(nproc) - 2` parallel workers and phases the build in 4 steps.
@@ -134,7 +139,7 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 | SCENE_ANALYSIS | YOLO tracker + SAM2 + CosyPose + pose filter |
 
 ## Key Constraints
-- **GPU**: RTX 3070 Ti (8GB VRAM) — only YOLO + one GPU-heavy node at a time. Mode switching is how VRAM is rationed.
+- **GPU (dev only)**: This simulation/dev PC has RTX 3070 Ti (8GB VRAM) → during development only YOLO + one GPU-heavy node at a time, mode switching rations VRAM. **Production deployment targets a different, higher-spec PC**, so VRAM is NOT a deployment-time bottleneck and should not drive architectural decisions (e.g., don't reject running multiple ML nodes simultaneously on the grounds that "8GB VRAM can't fit it"). Mode switching exists for dev ergonomics, not as a hard production constraint.
 - **No cross-workspace code dependency** with ur5e_ws (communicate via TF2 and actions only).
 - **QoS**: BEST_EFFORT + depth 1 for control-path topics.
 - **Optional deps**: TEASER++ (ICP fallback), Ceres (OpenCV fallback), GTSAM (passthrough) — packages must build and run sensibly without them.
@@ -148,7 +153,7 @@ Guidance for Claude working in this repo. These supplement the top-level system 
 - **Build incrementally.** Prefer `colcon build --packages-select <pkg>` over full `build.sh` when iterating on one package — much faster. Only use `build.sh` when dependency order matters (touching `perception_msgs` or `teaser_icp_hybrid_registrator`).
 - **Controller workspace is separate.** Do not add code deps on `/home/junho/ros2_ws/ur5e_ws/` — only TF2 frames and action interfaces cross the boundary. If a change seems to require coupling, flag it before implementing.
 - **Multi-camera path is unified.** Never add `if N==1` branches in launch files / fusion code — the principle is a single code path parameterized by the camera config.
-- **GPU budget is real.** A change that lets two GPU-heavy nodes run together (e.g. FoundationPose + CosyPose + YOLO) needs explicit OOM-avoidance reasoning, not hand-waved "should be fine."
+- **GPU budget is a dev-time concern only.** The 8GB VRAM ceiling applies to this simulation PC, not to the production machine — don't treat it as a hard architectural constraint. When the user asks about running multiple ML nodes together, first clarify dev vs production before arguing VRAM limits.
 - **Related skills**: `init` / `claude-md-improver` (maintain this file), `review` / `security-review` (PR review), `simplify` (code review pass), `claude-api` (if touching ML nodes that call hosted models — none do today).
 - **Use `Agent` with `Explore` subagent** for broad "where is X used" queries across 17 packages. Direct `Grep`/`Glob` is fine for known symbols.
 - **User language**: User writes mixed Korean/English. Mirror the user's language in responses; keep technical identifiers (topic names, class names) in English regardless.

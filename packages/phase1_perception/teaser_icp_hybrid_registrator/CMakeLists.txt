@@ -67,8 +67,14 @@ install(DIRECTORY include/ DESTINATION include)
 # Tests
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+
   ament_add_gtest(test_hybrid_registration test/test_hybrid_registration.cpp)
+  target_include_directories(test_hybrid_registration PRIVATE test)
   target_link_libraries(test_hybrid_registration teaser_icp_lib)
+
+  ament_add_gtest(test_fpfh_extractor test/test_fpfh_extractor.cpp)
+  target_include_directories(test_fpfh_extractor PRIVATE test)
+  target_link_libraries(test_fpfh_extractor teaser_icp_lib)
 endif()
 
 ament_package()
