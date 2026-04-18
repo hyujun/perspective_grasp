@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
     from rclpy.node import Node
 
+    from grasp_pose_planner.grippers.base_gripper import BaseGripper
+
 from perception_msgs.action import PlanGrasp
 
 
@@ -18,11 +20,16 @@ class BasePlanner(ABC):
 
     Subclasses implement ``plan()`` which receives the action goal and a
     feedback callback, and returns a ``PlanGrasp.Result``.
+
+    The planner is handed a :class:`BaseGripper` adapter at construction
+    time so that robot-specific details (joint mapping, collision volume,
+    kinematic limits) stay out of the geometric planning code.
     """
 
-    def __init__(self, node: Node) -> None:
-        """Store a reference to the owning ROS node for logging / params."""
+    def __init__(self, node: Node, gripper: BaseGripper) -> None:
+        """Store references to the owning ROS node and gripper adapter."""
         self._node = node
+        self._gripper = gripper
 
     # ------------------------------------------------------------------
     # Public API

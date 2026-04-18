@@ -1,12 +1,37 @@
 grasp_planner:
   ros__parameters:
-    # ── Planner selection ──────────────────────────────────────────────
-    # Available: antipodal  (add more in PLANNER_REGISTRY)
+    # ── Strategy selection ────────────────────────────────────────────
+    # Planner (algorithm)  — keys registered in PLANNER_REGISTRY
     planner_type: "antipodal"
+    # Gripper (end-effector) — keys registered in GRIPPER_REGISTRY
+    gripper_type: "hand_10dof"
 
-    # ── Antipodal planner parameters ───────────────────────────────────
-    num_grasp_candidates: 100
-    antipodal_threshold: 0.7
-    collision_check: true
-    approach_distance: 0.10          # meters
-    gripper_width_max: 0.085         # meters
+    # ── Data source topics ────────────────────────────────────────────
+    pose_topic:  "/pose_filter/filtered_poses"
+    cloud_topic: "/merged/points"
+    max_pose_age_sec:  1.0
+    max_cloud_age_sec: 1.0
+
+    # ── Antipodal planner ─────────────────────────────────────────────
+    num_grasp_candidates: 100        # points sampled per planning call
+    antipodal_threshold:  0.85       # min |n·d| for antipodal pair
+    approach_distance:    0.10       # pre-grasp offset along -approach (m)
+    object_crop_radius:   0.20       # sphere radius around target pose (m)
+    min_object_points:    80         # min points in crop to proceed
+    max_cloud_points:     2000       # downsample crop to this many points
+    normals_knn:          12         # k for PCA normal estimation
+    top_k_feasibility:    40         # check clearance on this many top pairs
+    clearance_radius:     0.008      # gripper point → scene point threshold (m)
+    min_clearance_fraction: 0.85     # fraction of gripper points that must be free
+    score_weight_antipodal: 0.5
+    score_weight_clearance: 0.3
+    score_weight_strategy:  0.2
+    rng_seed:             0          # 0 → nondeterministic
+
+    # ── Hand10DoF gripper (placeholder dims; tune to real hand) ───────
+    gripper.width_min:       0.0
+    gripper.width_max:       0.12
+    gripper.palm_depth:      0.05
+    gripper.palm_height:     0.06
+    gripper.finger_length:   0.09
+    gripper.finger_thickness: 0.02
