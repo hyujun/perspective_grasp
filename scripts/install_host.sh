@@ -26,6 +26,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# shellcheck source=_venv.sh
+source "$SCRIPT_DIR/_venv.sh"
+
 echo "============================================================"
 echo " perspective_grasp - Host Environment Setup"
 echo " Target: Ubuntu 24.04 + NVIDIA GPU"
@@ -163,10 +166,19 @@ else
 fi
 
 # ---- 7. Python Packages (host) ----
+# Installed into the workspace venv ($WS_DIR/.venv) — NOT into ~/.local or
+# system site-packages. This keeps pip-installed deps isolated from apt's
+# python3-numpy / cv_bridge / rclpy, which stay visible via
+# --system-site-packages.
 echo ""
 echo "=== [7/9] Python: ultralytics (YOLO) ==="
-pip3 install --user --break-system-packages ultralytics 2>/dev/null \
-    || pip3 install --user ultralytics
+ensure_venv
+# Pin numpy<2 so the venv keeps using apt's numpy 1.26.4 (what cv_bridge
+# was built against). ultralytics pulls numpy as a dep and will otherwise
+# install numpy>=2, reintroducing the C-extension ABI mismatch.
+# Skip opencv-python: use apt's python3-opencv / cv_bridge's bundled cv2.
+pip install --upgrade 'numpy<2' ultralytics
+pip uninstall -y opencv-python >/dev/null 2>&1 || true
 
 # ---- 8. Docker + NVIDIA Container Toolkit ----
 echo ""
@@ -213,11 +225,13 @@ echo " Host setup complete!"
 echo ""
 echo " Next steps:"
 echo "   1. Log out and back in (for docker group)."
-echo "   2. Build the workspace:"
-echo "        cd ~/ros2_ws/perspective_ws"
+echo "   2. Activate the workspace Python venv (installed above):"
+echo "        source $VENV_DIR/bin/activate"
+echo "   3. Build the workspace:"
+echo "        cd $WS_DIR"
 echo "        ./src/perspective_grasp/build.sh"
-echo "   3. Build ML Docker containers:"
-echo "        cd ~/ros2_ws/perspective_ws/src/perspective_grasp"
+echo "   4. Build ML Docker containers:"
+echo "        cd $WS_DIR/src/perspective_grasp"
 echo "        docker compose -f docker/docker-compose.yml build"
-echo "   4. Drop weights under models/<service>/ (or set *_WEIGHTS env vars)."
+echo "   5. Drop weights under models/<service>/ (or set *_WEIGHTS env vars)."
 echo "============================================================"

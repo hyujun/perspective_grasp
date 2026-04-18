@@ -23,6 +23,11 @@
 # =============================================================================
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=_venv.sh
+source "$SCRIPT_DIR/_venv.sh"
+
 echo "============================================================"
 echo " perspective_grasp - Dependency Installation"
 echo "============================================================"
@@ -114,19 +119,31 @@ else
 fi
 
 # ---- 4. Python ML packages (host-side only) ----
+# Installed into the workspace venv ($WS_DIR/.venv) — NOT into ~/.local or
+# system site-packages. This keeps pip-installed deps isolated from apt's
+# python3-numpy / cv_bridge / rclpy, which stay visible via
+# --system-site-packages.
 echo ""
 echo "=== [4/4] Python: ultralytics (YOLO) ==="
-pip3 install --user --break-system-packages ultralytics 2>/dev/null \
-    || pip3 install --user ultralytics
+ensure_venv
+# Pin numpy<2 so the venv keeps using apt's numpy 1.26.4 (what cv_bridge
+# was built against). ultralytics pulls numpy as a dep and will otherwise
+# install numpy>=2, reintroducing the C-extension ABI mismatch.
+# Skip opencv-python: use apt's python3-opencv / cv_bridge's bundled cv2.
+pip install --upgrade 'numpy<2' ultralytics
+pip uninstall -y opencv-python >/dev/null 2>&1 || true
 
 echo ""
 echo "============================================================"
 echo " All host-side dependencies installed successfully!"
 echo ""
+echo " Python venv: $VENV_DIR"
+echo "   Activate before running nodes:  source $VENV_DIR/bin/activate"
+echo ""
 echo " Phase 4 ML nodes (FoundationPose, CosyPose, MegaPose, SAM2,"
 echo " BundleSDF) run inside Docker — build those with:"
-echo "   cd ~/ros2_ws/perspective_ws/src/perspective_grasp"
+echo "   cd $WS_DIR/src/perspective_grasp"
 echo "   docker compose -f docker/docker-compose.yml build"
 echo ""
-echo " Next: cd ~/ros2_ws/perspective_ws && ./src/perspective_grasp/build.sh"
+echo " Next: cd $WS_DIR && ./src/perspective_grasp/build.sh"
 echo "============================================================"

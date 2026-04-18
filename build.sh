@@ -29,6 +29,9 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
+# shellcheck source=scripts/_venv.sh
+source "$SCRIPT_DIR/scripts/_venv.sh"
+
 # ---- Parse arguments (flags in any order) ----
 BUILD_TYPE="RelWithDebInfo"
 DO_CLEAN=0
@@ -61,11 +64,21 @@ if [ -z "${AMENT_PREFIX_PATH:-}" ]; then
     source /opt/ros/jazzy/setup.bash
 fi
 
+# Activate the workspace venv (if one was created by install_*.sh). This
+# makes ament_python packages stamp venv python into their script shebangs
+# and ensures pip-installed runtime deps (e.g. ultralytics) are on sys.path
+# when colcon builds + tests + when launched nodes spawn.
+VENV_NOTE="(not present — Python deps fall back to system)"
+if activate_venv_if_exists; then
+    VENV_NOTE="$VIRTUAL_ENV"
+fi
+
 echo "============================================================"
 echo " perspective_grasp - Workspace Build"
 echo " Build type : $BUILD_TYPE"
 echo " Parallel   : $PARALLEL_JOBS jobs"
 echo " Workspace  : $WS_DIR"
+echo " Python venv: $VENV_NOTE"
 echo "============================================================"
 
 if [ "$DO_CLEAN" = "1" ]; then
@@ -124,6 +137,9 @@ echo ""
 echo "============================================================"
 echo " Build complete ($BUILD_TYPE)"
 echo " Source with: source $WS_DIR/install/setup.bash"
+if [ -f "$VENV_DIR/bin/activate" ]; then
+    echo " Venv   with: source $VENV_DIR/bin/activate"
+fi
 echo "============================================================"
 
 # ---- Optional: run tests ----
