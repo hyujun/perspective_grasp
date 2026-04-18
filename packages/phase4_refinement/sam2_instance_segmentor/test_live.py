@@ -245,7 +245,7 @@ def main() -> int:
             rc = 1
 
     node.destroy_node()
-    rclpy.shutdown()
+    rclpy.try_shutdown()
     return rc
 
 
