@@ -21,7 +21,7 @@ setup(
     zip_safe=True,
     maintainer='hyujun',
     maintainer_email='hyujun@todo.todo',
-    description='LifecycleNode wrapper for Isaac ROS FoundationPose',
+    description='LifecycleNode wrapper for NVIDIA FoundationPose 6D pose tracker',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [

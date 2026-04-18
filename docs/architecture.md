@@ -39,13 +39,13 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
            └────────────────────┬────────────────────┘
                                 │
            ┌────────────────────▼────────────────────┐
-           │  Phase 4: Refinement (On-Demand, stubs) │
-           │  foundationpose  cosypose  sam2         │
-           │  megapose        bundlesdf              │
+           │  Phase 4: Refinement (On-Demand)        │
+           │  foundationpose  sam2                   │
+           │  (cosypose  megapose  bundlesdf stubs)  │
            └────────────────────┬────────────────────┘
                                 │
            ┌────────────────────▼────────────────────┐
-           │  Phase 5: Grasp Planning (stub)         │
+           │  Phase 5: Grasp Planning                │
            │  grasp_pose_planner (Action Server)     │
            └─────────────────────────────────────────┘
 
@@ -66,12 +66,12 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
 | Phase 2 | [pcl_merge_node](../packages/phase2_fusion/pcl_merge_node/) | C++ |
 | Phase 3 | [pose_filter_cpp](../packages/phase3_filtering/pose_filter_cpp/) | C++ |
 | Phase 3 | [pose_graph_smoother](../packages/phase3_filtering/pose_graph_smoother/) | C++ |
-| Phase 4 (stub) | [isaac_foundationpose_tracker](../packages/phase4_refinement/isaac_foundationpose_tracker/) | Python |
+| Phase 4 | [isaac_foundationpose_tracker](../packages/phase4_refinement/isaac_foundationpose_tracker/) | Python |
 | Phase 4 (stub) | [megapose_ros2_wrapper](../packages/phase4_refinement/megapose_ros2_wrapper/) | Python |
 | Phase 4 (stub) | [cosypose_scene_optimizer](../packages/phase4_refinement/cosypose_scene_optimizer/) | Python |
-| Phase 4 (stub) | [sam2_instance_segmentor](../packages/phase4_refinement/sam2_instance_segmentor/) | Python |
+| Phase 4 | [sam2_instance_segmentor](../packages/phase4_refinement/sam2_instance_segmentor/) | Python |
 | Phase 4 (stub) | [bundlesdf_unknown_tracker](../packages/phase4_refinement/bundlesdf_unknown_tracker/) | Python |
-| Phase 5 (stub) | [grasp_pose_planner](../packages/phase5_manipulation/grasp_pose_planner/) | Python |
+| Phase 5 | [grasp_pose_planner](../packages/phase5_manipulation/grasp_pose_planner/) | Python |
 | Infra | [perception_meta_controller](../packages/infrastructure/perception_meta_controller/) | C++ |
 | Infra | [perception_debug_visualizer](../packages/infrastructure/perception_debug_visualizer/) | C++ |
 | Infra | [multi_camera_calibration](../packages/infrastructure/multi_camera_calibration/) | C++ / Python |

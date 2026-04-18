@@ -12,7 +12,7 @@ Host setup for `perspective_grasp`. The workspace uses a **host + Docker hybrid*
 | Docker | Required only for Phase 4 ML nodes |
 | Workspace path | `~/ros2_ws/perspective_ws/` (assumed throughout docs) |
 
-> Phase 4 nodes are currently **stubs** (launch files + skeletons, no inference). Installing the Docker stack is still useful for bringing up the runtime, but expect empty topic output until each node is implemented.
+> Phase 4 status is mixed: **SAM2** and **FoundationPose** produce real output once their weights are in place; **MegaPose / CosyPose / BundleSDF** remain stubs (launch files + skeletons, no inference).
 
 ## Clone
 
@@ -61,7 +61,7 @@ Installs ROS 2 packages, system libs, TEASER++, manif, GTSAM, and ultralytics. D
 
 ## Docker images (Phase 4 ML stack)
 
-The Phase 4 services share a base image `perspective_grasp/ml-base` built from [docker/Dockerfile](../docker/Dockerfile). SAM2 uses a dedicated `sam2-runtime` target to pin a compatible PyTorch version.
+The Phase 4 services share a base image `perspective_grasp/ml-base` built from [docker/Dockerfile](../docker/Dockerfile). Each GPU-heavy service has its own runtime stage when its dependency stack (PyTorch + CUDA ops) would otherwise collide with peers: `sam2-runtime` pins PyTorch 2.6 + Meta SAM2, and `foundationpose-runtime` pins PyTorch 2.6 + kaolin 0.17 + nvdiffrast 0.3.3.
 
 ```bash
 cd ~/ros2_ws/perspective_ws/src/perspective_grasp
@@ -75,7 +75,10 @@ Compose context is the repo root, so volume paths inside [docker/docker-compose.
 Each Phase 4 service expects weights under a mount point. Either set an env var or drop weights in the default `models/<service>/` directory at repo root:
 
 ```bash
-export FOUNDATIONPOSE_WEIGHTS=/path/to/foundationpose/weights
+# FoundationPose expects two sub-dirs under this mount:
+#   meshes/<class_name>.(obj|ply|stl)   — one file per YOLO class
+#   weights/                            — FoundationPose refiner / scorer checkpoints
+export FOUNDATIONPOSE_WEIGHTS=/path/to/foundationpose
 export SAM2_WEIGHTS=/path/to/sam2/weights
 export COSYPOSE_WEIGHTS=/path/to/cosypose/weights
 export BUNDLESDF_WEIGHTS=/path/to/bundlesdf/weights

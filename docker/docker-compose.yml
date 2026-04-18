@@ -42,21 +42,36 @@ x-gpu-common: &gpu-common
 
 services:
   # -----------------------------------------------------------------------
-  # FoundationPose — NVIDIA Isaac FoundationPose 6D tracker
-  # Needs: PyTorch + kaolin + nvdiffrast + specific CUDA ops
+  # FoundationPose — NVIDIA FoundationPose 6D tracker
+  # Needs: PyTorch 2.6 + kaolin 0.17 + nvdiffrast 0.3.3 (built in stage)
+  # Weights mount: $FOUNDATIONPOSE_WEIGHTS → /ws/models/foundationpose
+  #   expected layout:
+  #     meshes/<class_name>.(obj|ply|stl)   # one mesh per YOLO class
+  #     weights/                            # FoundationPose refiner/scorer
+  # FOUNDATIONPOSE_CAMERA_CONFIG selects the camera topology:
+  #   unset / empty  → one non-namespaced /foundationpose_tracker (1-cam)
+  #   /ws/config/camera_config_2cam.yaml → /cam0 + /cam1 fan-out
+  #   /ws/config/camera_config.yaml      → /cam0 + /cam1 + /cam2 fan-out
   # -----------------------------------------------------------------------
   foundationpose:
     <<: *gpu-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: foundationpose-runtime
+    image: perspective_grasp/foundationpose:latest
     container_name: pg_foundationpose
     volumes:
       - ../packages/phase4_refinement/isaac_foundationpose_tracker:/ws/src/isaac_foundationpose_tracker
+      - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${FOUNDATIONPOSE_WEIGHTS:-../models/foundationpose}:/ws/models/foundationpose
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
+        cd /ws && colcon build --packages-select isaac_foundationpose_tracker &&
         source /ws/install/setup.bash &&
         echo '[FoundationPose] Container ready.' &&
-        ros2 launch isaac_foundationpose_tracker foundationpose.launch.py
+        ros2 launch isaac_foundationpose_tracker foundationpose.launch.py ${FOUNDATIONPOSE_CAMERA_CONFIG:+camera_config:=$FOUNDATIONPOSE_CAMERA_CONFIG}
       "
 
   # -----------------------------------------------------------------------

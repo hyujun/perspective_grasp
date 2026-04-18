@@ -5,9 +5,10 @@ RGB-D camera-based 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation
 **17 ROS 2 packages** across 5 phases + debug visualizer + multi-camera support + calibration + bringup.
 
 **Current status**: C++ packages (Phase 1-3, fusion, infra) are implemented. Phase 1 has 29 gtest
-unit tests (tracker state machine, CAD loader, pcl_utils, hybrid registrator, FPFH). Phase 4 ML
-nodes (FoundationPose, MegaPose, CosyPose, SAM2, BundleSDF) and Phase 5 grasp_pose_planner are
-**stubs** — they have launch files and package skeletons, not working inference.
+unit tests. Phase 4 ML nodes: **SAM2** and **FoundationPose** are wired end-to-end (pluggable
+real+mock backends, docker runtimes, multi-cam fan-out); **MegaPose / CosyPose / BundleSDF** remain
+stubs. Phase 5 **grasp_pose_planner** antipodal planner is implemented (robot-agnostic planner +
+`Hand10DoF` adapter).
 
 ## Directory Layout
 ```
@@ -89,7 +90,7 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 - **Phase 1**: `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator`
 - **Phase 2 (Fusion)**: `cross_camera_associator`, `pcl_merge_node`
 - **Phase 3 (Filtering)**: `pose_filter_cpp` (SE(3) IEKF), `pose_graph_smoother` (GTSAM, optional)
-- **Phase 4 (Refinement, stubs)**: `isaac_foundationpose_tracker`, `megapose_ros2_wrapper`, `cosypose_scene_optimizer`, `sam2_instance_segmentor`, `bundlesdf_unknown_tracker`
+- **Phase 4 (Refinement)**: `isaac_foundationpose_tracker` (done — backends + Docker), `sam2_instance_segmentor` (done), `megapose_ros2_wrapper` (stub), `cosypose_scene_optimizer` (stub), `bundlesdf_unknown_tracker` (stub)
 - **Phase 5 (Manipulation, stub)**: `grasp_pose_planner`
 - **Infra**: `perception_meta_controller`, `perception_debug_visualizer`, `multi_camera_calibration`
 
@@ -148,7 +149,7 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 Guidance for Claude working in this repo. These supplement the top-level system prompt.
 
 - **Verify before trusting memory.** Memory files under `/home/junho/.claude/projects/-home-junho-ros2-ws-perspective-ws-src-perspective-grasp/memory/` are point-in-time snapshots. Before citing package counts, file paths, or dep status from memory, verify against the current tree (`ls`, `grep`, `git log`).
-- **Phase 4 is stubs.** Do not claim ML nodes "work" — they have launch files and skeletons. If a user asks to "run FoundationPose" or similar, flag that the node is a stub and needs implementation first.
+- **Phase 4 status is mixed.** SAM2 and FoundationPose are fully wired (real + mock backends, Docker stages, multi-cam fan-out). MegaPose / CosyPose / BundleSDF are still stubs — flag those as needing implementation if the user asks to run them.
 - **Host vs Docker.** Before editing a Phase 4 node, remember it runs inside the `ml-base` container. Changes to `perception_msgs` require rebuilding the `msgs-builder` stage — `docker compose build` after editing messages.
 - **Build incrementally.** Prefer `colcon build --packages-select <pkg>` over full `build.sh` when iterating on one package — much faster. Only use `build.sh` when dependency order matters (touching `perception_msgs` or `teaser_icp_hybrid_registrator`).
 - **Controller workspace is separate.** Do not add code deps on `/home/junho/ros2_ws/ur5e_ws/` — only TF2 frames and action interfaces cross the boundary. If a change seems to require coupling, flag it before implementing.

@@ -82,7 +82,68 @@ WORKDIR /ws
 CMD ["bash"]
 
 # ---------------------------------------------------------------------------
-# Stage 4: sam2-runtime — ml-base + PyTorch + Meta SAM2
+# Stage 4: foundationpose-runtime — ml-base + PyTorch + kaolin + nvdiffrast
+#
+# NVIDIA FoundationPose (https://github.com/NVlabs/FoundationPose) needs:
+#   * torch / torchvision (CUDA 12.6 whls)
+#   * kaolin (SDF + rendering helpers; headers baked against torch ABI)
+#   * nvdiffrast (differentiable rasteriser; builds CUDA ops at install)
+#   * trimesh + pyrender + open3d for mesh I/O, shape ops
+#
+# The FoundationPose python sources are cloned into /opt/FoundationPose
+# and added to PYTHONPATH so `from estimater import FoundationPose` works
+# from the ROS node's runtime PYTHONPATH.
+#
+# Separate stage so kaolin/nvdiffrast CUDA-op versions do not clash with
+# SAM2 / CosyPose / BundleSDF. Build is heavy (~15 min on 3070 Ti) —
+# layers are ordered to maximise cache reuse when iterating on the ROS
+# node sources only.
+# ---------------------------------------------------------------------------
+FROM ml-base AS foundationpose-runtime
+
+# numpy<2 first (see SAM2 stage — same cv_bridge ABI constraint).
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+        "numpy<2"
+
+# Native deps for kaolin / nvdiffrast / open3d / pyrender.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libegl1 libgl1 libgles2 libglvnd0 libxrender1 libxi6 libxkbcommon0 \
+        libsm6 libxext6 libglib2.0-0 libosmesa6-dev freeglut3-dev \
+        ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+# PyTorch with CUDA 12.6. Pinned to versions known to work with
+# kaolin 0.17 / nvdiffrast 0.3.x as of 2026-04.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        --index-url https://download.pytorch.org/whl/cu126 \
+        torch==2.6.0 torchvision==0.21.0
+
+# Mesh / rendering utilities FoundationPose pulls in at runtime.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        trimesh==4.5.3 pyrender==0.1.45 open3d==0.18.0 \
+        opencv-python-headless==4.10.0.84 \
+        scipy==1.14.1 scikit-image==0.24.0 \
+        imageio==2.36.0 omegaconf==2.3.0 \
+        ruamel.yaml==0.18.6 joblib==1.4.2
+
+# nvdiffrast + kaolin — compile against the torch we just installed.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        git+https://github.com/NVlabs/nvdiffrast.git@v0.3.3
+RUN pip3 install --no-cache-dir --break-system-packages \
+        kaolin==0.17.0 \
+        -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.6.0_cu126.html
+
+# FoundationPose sources — cloned once, put on PYTHONPATH. Weights are
+# volume-mounted at runtime (see docker-compose FOUNDATIONPOSE_WEIGHTS).
+RUN git clone --depth 1 https://github.com/NVlabs/FoundationPose.git \
+        /opt/FoundationPose
+ENV PYTHONPATH=/opt/FoundationPose:${PYTHONPATH}
+
+WORKDIR /ws
+CMD ["bash"]
+
+# ---------------------------------------------------------------------------
+# Stage 5: sam2-runtime — ml-base + PyTorch + Meta SAM2
 #
 # Separate stage so SAM2's PyTorch version does not clash with other
 # Phase 4 services (kaolin/nvdiffrast/PyTorch3D have their own pins).

@@ -1,8 +1,32 @@
-foundationpose_tracker:
+# '/**' = wildcard node matcher: applies whether this file is loaded into
+# '/foundationpose_tracker' (single-cam / no-arg) or
+# '/cam{N}/foundationpose_tracker' (multi-camera fan-out from
+# foundationpose.launch.py).
+/**:
   ros__parameters:
-    mesh_dir: ""                     # path to object mesh directory
-    refine_iterations: 3
-    score_threshold: 0.5
-    image_topic: /camera/color/image_raw
-    depth_topic: /camera/depth/image_rect_raw
-    camera_info_topic: /camera/color/camera_info
+    # ── Backend selection ────────────────────────────────────────────
+    # 'foundationpose' — NVIDIA FoundationPose (GPU, runs in Docker service)
+    # 'mock'           — depth-unprojected bbox centre (CPU, smoke test only)
+    backend: "foundationpose"
+
+    # ── Topics ───────────────────────────────────────────────────────
+    image_topic:        "/camera/color/image_raw"
+    depth_topic:        "/camera/depth/image_rect_raw"
+    camera_info_topic:  "/camera/color/camera_info"
+    detections_topic:   "/yolo/detections"
+    poses_topic:        "/foundationpose/raw_poses"
+
+    # ── Frame / detection pairing ────────────────────────────────────
+    frame_queue_size:         10
+    sync_tolerance_sec:       0.05     # max |t_frame - t_detections|
+    min_detection_confidence: 0.0
+
+    # ── FoundationPose backend ──────────────────────────────────────
+    # Path is inside the container (see docker-compose volume mount).
+    # Meshes are looked up by YOLO class name — one file per class,
+    # named `<class_name>.(obj|ply|stl)` (case-insensitive).
+    mesh_dir:           "/ws/models/foundationpose/meshes"
+    refine_iterations:  5
+    score_threshold:    0.5
+    depth_max_m:        2.0
+    device:             "cuda"

@@ -2,7 +2,7 @@
 
 How to launch the perception stack on the host, the ML nodes in Docker, and how to switch between 1 / 2 / 3 camera configurations.
 
-> **Stub warning.** Phase 4 refinement nodes (`isaac_foundationpose_tracker`, `megapose_ros2_wrapper`, `cosypose_scene_optimizer`, `sam2_instance_segmentor`, `bundlesdf_unknown_tracker`) and Phase 5 (`grasp_pose_planner`) currently ship as launch files + skeletons without inference. Their launches start cleanly but will not produce meaningful output until each node is implemented. Everything else (Phase 1–3, fusion, filtering, infra) is live.
+> **Status note.** `isaac_foundationpose_tracker` and `sam2_instance_segmentor` are live (real + mock backends, Docker runtime stages, multi-cam fan-out). `grasp_pose_planner` ships an antipodal planner + `Hand10DoF` adapter. `megapose_ros2_wrapper`, `cosypose_scene_optimizer`, and `bundlesdf_unknown_tracker` remain stubs — their launches start cleanly but produce no output until implemented. Everything else (Phase 1–3, fusion, filtering, infra) is live.
 
 ## Prerequisites
 
@@ -73,6 +73,18 @@ docker compose -f docker/docker-compose.yml down
 ```
 
 Model weights mount from `$FOUNDATIONPOSE_WEIGHTS` / `$SAM2_WEIGHTS` / `$COSYPOSE_WEIGHTS` / `$BUNDLESDF_WEIGHTS` (or `models/<service>/` at repo root). See [installation.md](installation.md#model-weights).
+
+Both SAM2 and FoundationPose support multi-camera fan-out via an env var that points at a `camera_config*.yaml`. The compose file mounts the `perception_bringup/config` directory read-only at `/ws/config`:
+
+```bash
+# SAM2: 2-camera fan-out (/cam0 + /cam1)
+SAM2_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
+  docker compose -f docker/docker-compose.yml up sam2
+
+# FoundationPose: 3-camera fan-out (/cam0 + /cam1 + /cam2)
+FOUNDATIONPOSE_CAMERA_CONFIG=/ws/config/camera_config.yaml \
+  docker compose -f docker/docker-compose.yml up foundationpose
+```
 
 ## Camera configuration
 
