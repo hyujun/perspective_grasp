@@ -1,9 +1,33 @@
-megapose_tracker:
+# '/**' = wildcard node matcher: applies whether this file is loaded into
+# '/megapose_tracker' (single-cam / no-arg) or
+# '/cam{N}/megapose_tracker' (multi-camera fan-out from
+# megapose.launch.py).
+/**:
   ros__parameters:
-    model_dir: ""                    # path to MegaPose model weights
-    n_coarse: 1
-    n_refine: 3
-    score_threshold: 0.3
-    image_topic: /camera/color/image_raw
-    depth_topic: /camera/depth/image_rect_raw
-    camera_info_topic: /camera/color/camera_info
+    # ── Backend selection ────────────────────────────────────────────
+    # 'megapose' — happypose/MegaPose (GPU, runs in Docker service)
+    # 'mock'     — bbox-centre at fixed depth (CPU, smoke test only)
+    backend: "megapose"
+
+    # ── Topics ───────────────────────────────────────────────────────
+    image_topic:        "/camera/color/image_raw"
+    camera_info_topic:  "/camera/color/camera_info"
+    detections_topic:   "/yolo/detections"
+    poses_topic:        "/megapose/raw_poses"
+
+    # ── Frame / detection pairing ────────────────────────────────────
+    image_queue_size:         10
+    sync_tolerance_sec:       0.05
+    min_detection_confidence: 0.0
+
+    # ── MegaPose backend ─────────────────────────────────────────────
+    # dataset_dir sets HAPPYPOSE_DATA_DIR inside the container (shared
+    # with CosyPose). mesh_dir points to a flat folder of
+    # `<class_name>.(obj|ply|stl)` meshes — the same layout
+    # FoundationPose uses, so they can share a single mesh tree.
+    dataset_dir:          "/ws/models/happypose"
+    mesh_dir:             "/ws/models/megapose/meshes"
+    model_name:           "megapose-1.0-RGB-multi-hypothesis"
+    n_refiner_iterations: 5
+    score_threshold:      0.3
+    device:               "cuda"

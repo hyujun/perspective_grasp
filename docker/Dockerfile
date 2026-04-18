@@ -3,7 +3,7 @@
 #
 # Shared base for GPU-heavy Python ML nodes that need dependency isolation.
 # Host runs: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO
-# Docker runs: FoundationPose, MegaPose/CosyPose, SAM2, BundleSDF
+# Docker runs: FoundationPose, CosyPose + MegaPose (shared stage), SAM2, BundleSDF
 #
 # Usage:
 #   docker compose build              # Build all images
@@ -143,7 +143,71 @@ WORKDIR /ws
 CMD ["bash"]
 
 # ---------------------------------------------------------------------------
-# Stage 5: sam2-runtime — ml-base + PyTorch + Meta SAM2
+# Stage 5: cosypose-runtime — ml-base + PyTorch + PyTorch3D + happypose
+#
+# happypose (https://github.com/agimus-project/happypose) bundles both
+# CosyPose (scene-level multi-object optimization) and MegaPose
+# (zero-shot RGB-only refinement) under one install tree. We share a
+# single stage across the `cosypose` and `megapose` docker-compose
+# services because the heavy deps (torch / pytorch3d / panda3d) are
+# identical — no reason to build twice.
+#
+# Dep risks (flag at first build):
+#   * pytorch3d does not reliably publish cu126/torch 2.6 wheels, so
+#     we source-build against the pinned torch above (slow: ~10 min).
+#   * happypose is still pre-1.0 — upstream API drift may require
+#     bumping the pin. Log `pip show happypose` in the node at load()
+#     so divergences surface in container logs rather than at inference.
+# ---------------------------------------------------------------------------
+FROM ml-base AS cosypose-runtime
+
+# numpy<2 first (cv_bridge ABI — same constraint as foundationpose/sam2).
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+        "numpy<2"
+
+# Native deps for pytorch3d / panda3d / assimp-based mesh loaders.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libegl1 libgl1 libgles2 libglvnd0 libxrender1 libxi6 libxkbcommon0 \
+        libsm6 libxext6 libglib2.0-0 libosmesa6-dev freeglut3-dev \
+        libassimp-dev ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+# PyTorch 2.6 + CUDA 12.6 — same pin the other Phase 4 stages use.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        --index-url https://download.pytorch.org/whl/cu126 \
+        torch==2.6.0 torchvision==0.21.0
+
+# happypose runtime deps pulled ahead of happypose itself so source
+# builds (pytorch3d) see the right numeric stack.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        trimesh==4.5.3 \
+        opencv-python-headless==4.10.0.84 \
+        scipy==1.14.1 scikit-image==0.24.0 \
+        imageio==2.36.0 omegaconf==2.3.0 \
+        pandas==2.2.3 transforms3d==0.4.2 \
+        panda3d==1.10.14 joblib==1.4.2 \
+        pybullet==3.2.6 bokeh==3.6.0 plyfile==1.1
+
+# PyTorch3D — source install against the torch above. Pin to a tag
+# known compatible with torch 2.6 as of 2026-04.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.8"
+
+# happypose = MegaPose + CosyPose under one roof. Weight / dataset
+# trees are volume-mounted at runtime (see COSYPOSE_WEIGHTS /
+# MEGAPOSE_WEIGHTS in docker-compose).
+RUN pip3 install --no-cache-dir --break-system-packages \
+        "git+https://github.com/agimus-project/happypose.git@main"
+
+# happypose drives its data-tree discovery off this env var; node
+# params (`dataset_dir`) override it per-invocation when set.
+ENV HAPPYPOSE_DATA_DIR=/ws/models/happypose
+
+WORKDIR /ws
+CMD ["bash"]
+
+# ---------------------------------------------------------------------------
+# Stage 6: sam2-runtime — ml-base + PyTorch + Meta SAM2
 #
 # Separate stage so SAM2's PyTorch version does not clash with other
 # Phase 4 services (kaolin/nvdiffrast/PyTorch3D have their own pins).

@@ -1,7 +1,39 @@
-cosypose_optimizer:
+# '/**' = wildcard node matcher: applies whether this file is loaded into
+# '/cosypose_optimizer' (single-cam / no-arg) or
+# '/cam{N}/cosypose_optimizer' (multi-camera fan-out from
+# cosypose.launch.py).
+/**:
   ros__parameters:
-    model_dir: ""                    # path to CosyPose model weights
-    n_coarse_iterations: 1
-    n_refine_iterations: 4
-    n_pose_hypotheses: 5
-    bsz_objects: 16
+    # ── Backend selection ────────────────────────────────────────────
+    # 'cosypose' — happypose/CosyPose (GPU, runs in Docker service)
+    # 'mock'     — bbox-centre at fixed depth (CPU, smoke test only)
+    backend: "cosypose"
+
+    # ── Topics / action ──────────────────────────────────────────────
+    image_topic:        "/camera/color/image_raw"
+    camera_info_topic:  "/camera/color/camera_info"
+    detections_topic:   "/yolo/detections"
+    poses_topic:        "/cosypose/optimized_poses"
+    action_name:        "analyze_scene"
+
+    # ── Frame / detection pairing ────────────────────────────────────
+    # sync_tolerance is wider than FoundationPose/SAM2 because
+    # AnalyzeScene is a request-response action — a 0.2s stale frame
+    # is still fine when the caller is human-triggered or async.
+    frame_queue_size:         10
+    sync_tolerance_sec:       0.2
+    min_detection_confidence: 0.0
+
+    # ── CosyPose backend ─────────────────────────────────────────────
+    # dataset_dir is the HAPPYPOSE_DATA_DIR root inside the container
+    # (see docker-compose volume mount). dataset_name picks the BOP
+    # subtree (ycbv / tless / lmo / …). coarse_run_id / refiner_run_id
+    # are left empty to use the happypose defaults for that dataset.
+    dataset_dir:          "/ws/models/happypose"
+    dataset_name:         "ycbv"
+    coarse_run_id:        ""
+    refiner_run_id:       ""
+    n_coarse_iterations:  1
+    n_refiner_iterations: 4
+    score_threshold:      0.3
+    device:               "cuda"
