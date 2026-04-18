@@ -1,32 +1,52 @@
 #!/bin/bash
 # =============================================================================
-# build.sh - Phased colcon build for perspective_grasp
+# build.sh - Phased colcon build for perspective_grasp (17 packages)
 #
 # Build order respects inter-package dependencies:
-#   1. perception_msgs         (custom messages - all packages depend on this)
-#   2. teaser_icp_hybrid_registrator (C++ library - yolo_pcl_cpp_tracker depends)
-#   3. cross_camera_associator + pcl_merge_node (multi-camera infrastructure)
-#   4. All remaining packages  (parallel safe)
+#   1. perception_msgs                      (all packages depend on this)
+#   2. teaser_icp_hybrid_registrator        (C++ lib; yolo_pcl_cpp_tracker dep)
+#   3. cross_camera_associator + pcl_merge_node  (multi-camera fusion infra)
+#   4. All remaining packages               (parallel-safe)
 #
 # Usage:
-#   ./build.sh              # Full build (RelWithDebInfo)
-#   ./build.sh Release      # Full build (Release)
-#   ./build.sh --clean      # Clean build directory first
+#   ./build.sh                  # Full build (RelWithDebInfo)
+#   ./build.sh Release          # Full build (Release)
+#   ./build.sh --clean          # Wipe build/install/log then full build
+#   ./build.sh --clean Release  # Clean + Release
+#   ./build.sh --test           # Build then run unit tests
+#   ./build.sh --help           # Show this help
+#
+# Flags (any order):
+#   --clean   Remove build/install/log before building
+#   --test    After build, run colcon test on packages that ship tests
+#   Release | Debug | RelWithDebInfo | MinSizeRel   (build type; default RelWithDebInfo)
 # =============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
-cd "$WS_DIR"
+# ---- Parse arguments (flags in any order) ----
+BUILD_TYPE="RelWithDebInfo"
+DO_CLEAN=0
+DO_TEST=0
 
-# ---- Parse arguments ----
-BUILD_TYPE="${1:-RelWithDebInfo}"
-if [[ "${1:-}" == "--clean" ]]; then
-    echo "=== Cleaning build/install/log directories ==="
-    rm -rf build install log
-    BUILD_TYPE="${2:-RelWithDebInfo}"
-fi
+usage() {
+    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+}
+
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help) usage ;;
+        --clean)   DO_CLEAN=1 ;;
+        --test)    DO_TEST=1 ;;
+        Release|Debug|RelWithDebInfo|MinSizeRel) BUILD_TYPE="$arg" ;;
+        *) echo "Unknown argument: $arg (use --help)"; exit 1 ;;
+    esac
+done
+
+cd "$WS_DIR"
 
 CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE"
 PARALLEL_JOBS=$(( $(nproc) - 2 ))
@@ -34,51 +54,86 @@ PARALLEL_JOBS=$(( $(nproc) - 2 ))
 
 # Ensure ROS 2 is sourced
 if [ -z "${AMENT_PREFIX_PATH:-}" ]; then
+    # shellcheck disable=SC1091
     source /opt/ros/jazzy/setup.bash
 fi
 
 echo "============================================================"
 echo " perspective_grasp - Workspace Build"
-echo " Build type: $BUILD_TYPE | Parallel jobs: $PARALLEL_JOBS"
+echo " Build type : $BUILD_TYPE"
+echo " Parallel   : $PARALLEL_JOBS jobs"
+echo " Workspace  : $WS_DIR"
 echo "============================================================"
 
+if [ "$DO_CLEAN" = "1" ]; then
+    echo ""
+    echo "=== Cleaning build/install/log ==="
+    rm -rf build install log
+fi
+
+# Helper: time a phase
+phase() {
+    local label="$1"; shift
+    echo ""
+    echo "=== $label ==="
+    local t0=$SECONDS
+    "$@"
+    echo "    done in $((SECONDS - t0))s"
+}
+
 # ---- Phase 1: Message definitions (all packages depend on this) ----
-echo ""
-echo "=== [1/4] perception_msgs ==="
-colcon build --packages-select perception_msgs \
-    --cmake-args "$CMAKE_ARGS" \
-    --parallel-workers "$PARALLEL_JOBS"
+phase "[1/4] perception_msgs" \
+    colcon build --packages-select perception_msgs \
+        --cmake-args "$CMAKE_ARGS" \
+        --parallel-workers "$PARALLEL_JOBS"
+# shellcheck disable=SC1091
 source install/setup.bash
 
 # ---- Phase 2: Registration library (yolo_pcl_cpp_tracker depends on this) ----
-echo ""
-echo "=== [2/4] teaser_icp_hybrid_registrator ==="
-colcon build --packages-select teaser_icp_hybrid_registrator \
-    --cmake-args "$CMAKE_ARGS" \
-    --parallel-workers "$PARALLEL_JOBS"
+phase "[2/4] teaser_icp_hybrid_registrator" \
+    colcon build --packages-select teaser_icp_hybrid_registrator \
+        --cmake-args "$CMAKE_ARGS" \
+        --parallel-workers "$PARALLEL_JOBS"
+# shellcheck disable=SC1091
 source install/setup.bash
 
-# ---- Phase 3: Multi-camera infrastructure ----
-echo ""
-echo "=== [3/4] cross_camera_associator + pcl_merge_node ==="
-colcon build --packages-select cross_camera_associator pcl_merge_node \
-    --cmake-args "$CMAKE_ARGS" \
-    --parallel-workers "$PARALLEL_JOBS"
+# ---- Phase 3: Multi-camera fusion infrastructure ----
+phase "[3/4] cross_camera_associator + pcl_merge_node" \
+    colcon build --packages-select cross_camera_associator pcl_merge_node \
+        --cmake-args "$CMAKE_ARGS" \
+        --parallel-workers "$PARALLEL_JOBS"
+# shellcheck disable=SC1091
 source install/setup.bash
 
-# ---- Phase 4: All remaining packages (parallel safe) ----
-echo ""
-echo "=== [4/4] Remaining packages ==="
-colcon build --packages-skip \
-    perception_msgs \
-    teaser_icp_hybrid_registrator \
-    cross_camera_associator \
-    pcl_merge_node \
-    --cmake-args "$CMAKE_ARGS" \
-    --parallel-workers "$PARALLEL_JOBS"
+# ---- Phase 4: All remaining packages (parallel-safe) ----
+phase "[4/4] Remaining packages" \
+    colcon build --packages-skip \
+        perception_msgs \
+        teaser_icp_hybrid_registrator \
+        cross_camera_associator \
+        pcl_merge_node \
+        --cmake-args "$CMAKE_ARGS" \
+        --parallel-workers "$PARALLEL_JOBS"
+# shellcheck disable=SC1091
+source install/setup.bash
 
 echo ""
 echo "============================================================"
-echo " Build complete!"
+echo " Build complete ($BUILD_TYPE)"
 echo " Source with: source $WS_DIR/install/setup.bash"
 echo "============================================================"
+
+# ---- Optional: run tests ----
+if [ "$DO_TEST" = "1" ]; then
+    echo ""
+    echo "=== Running unit tests (Phase 1 + Phase 2 + Infrastructure) ==="
+    colcon test --packages-select \
+        teaser_icp_hybrid_registrator \
+        yolo_pcl_cpp_tracker \
+        cross_camera_associator \
+        pcl_merge_node \
+        multi_camera_calibration \
+        perception_meta_controller \
+        perception_debug_visualizer
+    colcon test-result --verbose || true
+fi
