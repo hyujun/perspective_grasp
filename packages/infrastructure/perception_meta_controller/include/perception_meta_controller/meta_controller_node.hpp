@@ -1,6 +1,5 @@
 #pragma once
 
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -9,6 +8,8 @@
 #include <perception_msgs/msg/pipeline_status.hpp>
 #include <perception_msgs/msg/associated_pose_array.hpp>
 #include <perception_msgs/srv/set_mode.hpp>
+
+#include "perception_meta_controller/detail/mode_logic.hpp"
 
 namespace perspective_grasp
 {
@@ -36,12 +37,7 @@ private:
   std::string active_mode_;
   std::vector<std::string> active_nodes_;
 
-  // Per-object camera visibility tracking
-  struct ObjectVisibility {
-    std::set<int> camera_ids;
-    rclcpp::Time last_seen;
-  };
-  std::unordered_map<int, ObjectVisibility> object_visibility_;
+  std::unordered_map<int, detail::ObjectVisibility> object_visibility_;
   int tracked_count_{0};
   int lost_count_{0};
   int num_cameras_{1};

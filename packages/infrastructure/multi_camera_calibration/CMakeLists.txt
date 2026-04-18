@@ -81,8 +81,21 @@ install(DIRECTORY config launch
 # Tests
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+
   ament_add_gtest(test_hand_eye_solver test/test_hand_eye_solver.cpp)
   target_link_libraries(test_hand_eye_solver calibration_lib)
+
+  ament_add_gtest(test_pose_converters test/test_pose_converters.cpp)
+  target_link_libraries(test_pose_converters calibration_lib)
+
+  ament_add_gtest(test_charuco_detector test/test_charuco_detector.cpp)
+  target_link_libraries(test_charuco_detector calibration_lib)
+
+  ament_add_gtest(test_joint_optimizer test/test_joint_optimizer.cpp)
+  target_link_libraries(test_joint_optimizer calibration_lib)
+  if(Ceres_FOUND)
+    target_compile_definitions(test_joint_optimizer PRIVATE HAS_CERES)
+  endif()
 endif()
 
 ament_package()

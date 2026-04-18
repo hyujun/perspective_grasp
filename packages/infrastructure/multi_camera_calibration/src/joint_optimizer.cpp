@@ -3,6 +3,8 @@
 
 #include "multi_camera_calibration/joint_optimizer.hpp"
 
+#include "multi_camera_calibration/detail/pose6d.hpp"
+
 #ifdef HAS_CERES
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
@@ -14,37 +16,9 @@ namespace perspective_grasp {
 
 #ifdef HAS_CERES
 
+using detail::Pose6D;
+
 namespace {
-
-/// Represents a 6-DoF pose as [angle_axis(3), translation(3)] for Ceres.
-struct Pose6D {
-  double data[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-  static Pose6D fromIsometry(const Eigen::Isometry3d& T) {
-    Pose6D pose;
-    Eigen::AngleAxisd aa(T.rotation());
-    Eigen::Vector3d axis_angle = aa.angle() * aa.axis();
-    pose.data[0] = axis_angle.x();
-    pose.data[1] = axis_angle.y();
-    pose.data[2] = axis_angle.z();
-    pose.data[3] = T.translation().x();
-    pose.data[4] = T.translation().y();
-    pose.data[5] = T.translation().z();
-    return pose;
-  }
-
-  [[nodiscard]] Eigen::Isometry3d toIsometry() const {
-    Eigen::Vector3d axis_angle(data[0], data[1], data[2]);
-    double angle = axis_angle.norm();
-    Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
-    if (angle > 1e-10) {
-      T.linear() =
-          Eigen::AngleAxisd(angle, axis_angle / angle).toRotationMatrix();
-    }
-    T.translation() = Eigen::Vector3d(data[3], data[4], data[5]);
-    return T;
-  }
-};
 
 /// Reprojection error cost function for a single observation.
 struct ReprojectionCost {

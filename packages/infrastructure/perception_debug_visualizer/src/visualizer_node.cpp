@@ -1,5 +1,7 @@
 #include "perception_debug_visualizer/visualizer_node.hpp"
 
+#include "perception_debug_visualizer/detail/overlay.hpp"
+
 namespace perspective_grasp
 {
 
@@ -33,23 +35,17 @@ VisualizerNode::VisualizerNode(const rclcpp::NodeOptions & options)
   pub_debug_image_ = create_publisher<sensor_msgs::msg::Image>(
     "/debug/image", rclcpp::QoS(1).best_effort());
 
-  RCLCPP_INFO(get_logger(), "VisualizerNode started (stub - minimal overlay)");
+  RCLCPP_INFO(get_logger(), "VisualizerNode started");
 }
 
 void VisualizerNode::image_callback(const sensor_msgs::msg::Image::ConstSharedPtr & msg)
 {
-  // Minimal stub: just republish the image with a text overlay
   try {
     auto cv_ptr = cv_bridge::toCvCopy(msg, "bgr8");
-    cv::putText(
-      cv_ptr->image,
-      "Mode: " + pipeline_mode_,
-      cv::Point(10, 30),
-      cv::FONT_HERSHEY_SIMPLEX, 0.8,
-      cv::Scalar(0, 255, 0), 2);
-
-    // TODO: overlay detection bounding boxes, pose axes, etc.
-
+    detail::draw_mode_overlay(cv_ptr->image, pipeline_mode_);
+    if (latest_detections_) {
+      detail::draw_detections(cv_ptr->image, *latest_detections_);
+    }
     pub_debug_image_->publish(*cv_ptr->toImageMsg());
   } catch (const cv_bridge::Exception & e) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "cv_bridge error: %s", e.what());
@@ -75,11 +71,3 @@ void VisualizerNode::pipeline_status_callback(
 }
 
 }  // namespace perspective_grasp
-
-int main(int argc, char ** argv)
-{
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<perspective_grasp::VisualizerNode>());
-  rclcpp::shutdown();
-  return 0;
-}

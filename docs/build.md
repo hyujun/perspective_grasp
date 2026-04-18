@@ -55,26 +55,45 @@ colcon build --packages-select grasp_pose_planner
 
 ## Tests
 
-Unit tests use `ament_cmake_gtest`. Phase 1 (`yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator`) has 29 tests covering the tracker state machine, CAD model loader, point-cloud utilities (`cropToRoi` / `preprocess`), the hybrid registrator (`refineIcp`, `updateConfig`, `align`), and the FPFH feature extractor. Other packages do not yet ship tests.
+Unit tests use `ament_cmake_gtest`. Two test surfaces ship today:
+
+| Phase | Packages | Binaries | Cases | Notes |
+|---|---|---:|---:|---|
+| Phase 1 | `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator` | 5 | 29 | Tracker state machine, CAD loader, `pcl_utils`, hybrid registrator, FPFH |
+| Infrastructure | `multi_camera_calibration`, `perception_meta_controller`, `perception_debug_visualizer` | 8 | 60 | Pure-logic detail libraries + rclcpp smoke tests for the two nodes |
+
+Other packages (Phase 2/3 fusion + filtering, Phase 4 ML, Phase 5 manipulation) do not yet ship tests.
 
 ```bash
 cd ~/ros2_ws/perspective_ws
 
-# Run all tests for Phase 1
+# Phase 1
 colcon test --packages-select teaser_icp_hybrid_registrator yolo_pcl_cpp_tracker
+
+# Infrastructure (multi_camera_calibration / meta_controller / debug_visualizer)
+colcon test --packages-select multi_camera_calibration perception_meta_controller perception_debug_visualizer
 
 # Show per-test output (passes + failures)
 colcon test-result --verbose
 
 # Drop into a single binary for gdb / --gtest_filter
 ./build/yolo_pcl_cpp_tracker/test_pcl_utils --gtest_filter=CropToRoi.*
+./build/multi_camera_calibration/test_charuco_detector --gtest_filter=CharucoDetectorTest.Detects*
 ```
 
 Notes:
 
-- Tests do not need a camera, a running ROS graph, or a GPU — they run against synthetic / committed `.pcd` fixtures.
-- `HybridRegistrator::align()` tests are gated behind `HAS_TEASERPP`. When TEASER++ is absent, the test is reported as `SKIPPED`, not failed. Install TEASER++ via [scripts/install_dependencies.sh](../scripts/install_dependencies.sh) to enable them.
-- `yolo_pcl_cpp_tracker` bundles pure-logic code (`cad_model_manager.cpp`, `pcl_utils.cpp`) into a static `yolo_tracker_utils` library that tests link against. Don't re-inline those sources into the executable.
+- Tests do not need a camera, a running ROS graph, or a GPU — they run against synthetic data / committed fixtures (`.pcd`, rendered ChArUco boards) or in-process pub/sub for the smoke tests.
+- **Optional-dep gating** uses CMake `target_compile_definitions`, not runtime detection. Tests are reported as compiled-out (not failed) on boxes without the dep:
+  - `HybridRegistrator::align()` is behind `HAS_TEASERPP` — install TEASER++ via [scripts/install_dependencies.sh](../scripts/install_dependencies.sh).
+  - `JointOptimizer` convergence test is behind `HAS_CERES` — install `libceres-dev` to enable. The stub-mode tests (empty samples, `isAvailable() == false` message) always run.
+- **Pure-logic extraction pattern.** Each tested package extracts non-ROS-coupled logic into a `detail/` header + small library so tests can link without spinning a node:
+  - `yolo_pcl_cpp_tracker` → `yolo_tracker_utils` (`cad_model_manager.cpp`, `pcl_utils.cpp`)
+  - `multi_camera_calibration` → `calibration_lib` (with extracted `detail/pose_converters.hpp`, `detail/pose6d.hpp`)
+  - `perception_meta_controller` → `mode_logic` (mode→nodes mapping, visibility tracker) + `meta_controller_core` (node class) + thin `meta_controller_main.cpp`
+  - `perception_debug_visualizer` → `overlay` (drawing helpers) + `visualizer_core` (node class) + thin `visualizer_main.cpp`
+  Don't re-inline these sources back into the executable.
+- The two rclcpp smoke tests (`test_meta_controller_smoke`, `test_visualizer_smoke`) construct the node, drive it via real publishers/services, and spin a `SingleThreadedExecutor` until the expected output appears (with a 2 s deadline).
 
 ## Rebuilding Docker images
 

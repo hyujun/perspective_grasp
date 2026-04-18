@@ -3,9 +3,10 @@
 
 #include "multi_camera_calibration/hand_eye_solver.hpp"
 
+#include "multi_camera_calibration/detail/pose_converters.hpp"
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
-#include <opencv2/core/eigen.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -13,40 +14,8 @@
 
 namespace perspective_grasp {
 
-namespace {
-
-void isometryToRvecTvec(const Eigen::Isometry3d& transform,
-                        cv::Mat& rvec, cv::Mat& tvec) {
-  Eigen::Matrix3d rotation = transform.rotation();
-  Eigen::Vector3d translation = transform.translation();
-
-  cv::Mat rotation_mat(3, 3, CV_64F);
-  cv::eigen2cv(rotation, rotation_mat);
-  cv::Rodrigues(rotation_mat, rvec);
-
-  tvec = cv::Mat(3, 1, CV_64F);
-  tvec.at<double>(0) = translation.x();
-  tvec.at<double>(1) = translation.y();
-  tvec.at<double>(2) = translation.z();
-}
-
-Eigen::Isometry3d rvecTvecToIsometry(const cv::Mat& rvec,
-                                     const cv::Mat& tvec) {
-  cv::Mat rotation_mat;
-  cv::Rodrigues(rvec, rotation_mat);
-
-  Eigen::Matrix3d rotation;
-  cv::cv2eigen(rotation_mat, rotation);
-
-  Eigen::Isometry3d result = Eigen::Isometry3d::Identity();
-  result.linear() = rotation;
-  result.translation() =
-      Eigen::Vector3d(tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
-
-  return result;
-}
-
-}  // namespace
+using detail::isometryToRvecTvec;
+using detail::rvecTvecToIsometry;
 
 CalibrationResult HandEyeSolver::solveEyeInHand(
     const std::vector<Eigen::Isometry3d>& T_base_gripper,

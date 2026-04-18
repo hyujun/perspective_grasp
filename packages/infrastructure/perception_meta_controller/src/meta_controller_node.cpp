@@ -14,11 +14,7 @@ MetaControllerNode::MetaControllerNode(const rclcpp::NodeOptions & options)
 
   active_mode_ = get_parameter("default_mode").as_string();
   num_cameras_ = static_cast<int>(get_parameter("num_cameras").as_int());
-  active_nodes_ = {"yolo_byte_tracker", "pcl_icp_pose_estimator", "pose_filter"};
-
-  if (num_cameras_ > 1) {
-    active_nodes_.push_back("cross_camera_associator");
-  }
+  active_nodes_ = detail::compute_active_nodes(active_mode_, num_cameras_);
 
   srv_set_mode_ = create_service<perception_msgs::srv::SetMode>(
     "/meta_controller/set_mode",
@@ -29,7 +25,6 @@ MetaControllerNode::MetaControllerNode(const rclcpp::NodeOptions & options)
   pub_status_ = create_publisher<perception_msgs::msg::PipelineStatus>(
     "/meta_controller/active_pipeline", rclcpp::QoS(1).reliable());
 
-  // Subscribe to associated poses for tracking visibility
   sub_associated_ = create_subscription<perception_msgs::msg::AssociatedPoseArray>(
     "/associated/poses", rclcpp::SensorDataQoS(),
     std::bind(&MetaControllerNode::associated_poses_callback, this,
@@ -51,28 +46,9 @@ void MetaControllerNode::handle_set_mode(
 {
   RCLCPP_INFO(get_logger(), "SetMode request: %s", request->mode.c_str());
 
-  if (request->mode == "NORMAL" ||
-    request->mode == "HIGH_PRECISION" ||
-    request->mode == "SCENE_ANALYSIS")
-  {
+  if (detail::is_valid_mode(request->mode)) {
     active_mode_ = request->mode;
-
-    if (active_mode_ == "NORMAL") {
-      active_nodes_ = {"yolo_byte_tracker", "pcl_icp_pose_estimator", "pose_filter"};
-    } else if (active_mode_ == "HIGH_PRECISION") {
-      active_nodes_ = {
-        "yolo_byte_tracker", "pcl_icp_pose_estimator",
-        "foundationpose_tracker", "pose_filter", "pose_graph_smoother"};
-    } else if (active_mode_ == "SCENE_ANALYSIS") {
-      active_nodes_ = {
-        "yolo_byte_tracker", "sam2_segmentor",
-        "cosypose_optimizer", "pose_filter"};
-    }
-
-    if (num_cameras_ > 1) {
-      active_nodes_.push_back("cross_camera_associator");
-    }
-
+    active_nodes_ = detail::compute_active_nodes(active_mode_, num_cameras_);
     response->success = true;
     response->active_pipeline = active_mode_;
   } else {
@@ -85,35 +61,11 @@ void MetaControllerNode::handle_set_mode(
 void MetaControllerNode::associated_poses_callback(
   const perception_msgs::msg::AssociatedPoseArray::ConstSharedPtr & msg)
 {
-  auto now_time = now();
-
-  for (const auto & ap : msg->poses) {
-    auto & vis = object_visibility_[ap.global_id];
-    vis.camera_ids.clear();
-    for (auto cam_id : ap.source_camera_ids) {
-      vis.camera_ids.insert(cam_id);
-    }
-    vis.last_seen = now_time;
-  }
-
-  // Prune stale objects and count tracked/lost
-  double timeout = get_parameter("stale_object_timeout_sec").as_double();
-  tracked_count_ = 0;
-  lost_count_ = 0;
-
-  for (auto it = object_visibility_.begin(); it != object_visibility_.end();) {
-    double age = (now_time - it->second.last_seen).seconds();
-    if (age > timeout) {
-      it = object_visibility_.erase(it);
-    } else {
-      if (it->second.camera_ids.empty()) {
-        lost_count_++;
-      } else {
-        tracked_count_++;
-      }
-      ++it;
-    }
-  }
+  const double timeout = get_parameter("stale_object_timeout_sec").as_double();
+  const auto counts = detail::update_visibility(
+    object_visibility_, *msg, now(), timeout);
+  tracked_count_ = counts.tracked;
+  lost_count_ = counts.lost;
 }
 
 void MetaControllerNode::publish_status()
@@ -129,11 +81,3 @@ void MetaControllerNode::publish_status()
 }
 
 }  // namespace perspective_grasp
-
-int main(int argc, char ** argv)
-{
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<perspective_grasp::MetaControllerNode>());
-  rclcpp::shutdown();
-  return 0;
-}

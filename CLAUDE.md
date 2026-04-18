@@ -5,7 +5,9 @@ RGB-D camera-based 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation
 **17 ROS 2 packages** across 5 phases + debug visualizer + multi-camera support + calibration + bringup.
 
 **Current status**: C++ packages (Phase 1-3, fusion, infra) are implemented. Phase 1 has 29 gtest
-unit tests. Phase 4 ML nodes: **SAM2** and **FoundationPose** are wired end-to-end (pluggable
+unit tests; the 3 infrastructure packages add another 60 gtest cases (8 binaries) — pure-logic
+tests on extracted detail libraries plus rclcpp smoke tests for `MetaControllerNode` and
+`VisualizerNode`. Phase 4 ML nodes: **SAM2** and **FoundationPose** are wired end-to-end (pluggable
 real+mock backends, docker runtimes, multi-cam fan-out); **MegaPose / CosyPose / BundleSDF** remain
 stubs. Phase 5 **grasp_pose_planner** antipodal planner is implemented (robot-agnostic planner +
 `Hand10DoF` adapter).
@@ -72,6 +74,10 @@ source install/setup.bash
 
 # Run Phase 1 unit tests (29 tests; TEASER++ align tests skip if unavailable)
 colcon test --packages-select teaser_icp_hybrid_registrator yolo_pcl_cpp_tracker
+colcon test-result --verbose
+
+# Run infrastructure unit tests (60 tests; Ceres-gated optimizer convergence skips if unavailable)
+colcon test --packages-select multi_camera_calibration perception_meta_controller perception_debug_visualizer
 colcon test-result --verbose
 ```
 
