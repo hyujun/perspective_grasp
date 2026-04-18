@@ -56,13 +56,14 @@ class CalibrationDataCollector(Node):
         dict_name = self.get_parameter("charuco.dictionary").value
         self.min_corners = self.get_parameter("charuco.min_corners").value
 
-        # Create ChArUco board
+        # Create ChArUco board (OpenCV 4.7+ API)
         dict_id = getattr(cv2.aruco, dict_name, cv2.aruco.DICT_6X6_250)
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(dict_id)
-        self.charuco_board = cv2.aruco.CharucoBoard_create(
-            squares_x, squares_y, square_length, marker_length, self.aruco_dict
+        self.charuco_board = cv2.aruco.CharucoBoard(
+            (squares_x, squares_y), square_length, marker_length, self.aruco_dict
         )
-        self.detector_params = cv2.aruco.DetectorParameters_create()
+        self.detector_params = cv2.aruco.DetectorParameters()
+        self.charuco_detector = cv2.aruco.CharucoDetector(self.charuco_board)
 
         # State
         self.bridge = CvBridge()
@@ -128,22 +129,16 @@ class CalibrationDataCollector(Node):
             image = self.latest_images[cam_id]
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-            # Detect ArUco markers
-            corners, ids, _ = cv2.aruco.detectMarkers(
-                gray, self.aruco_dict, parameters=self.detector_params
+            # Detect ChArUco board (OpenCV 4.7+ unified detector)
+            charuco_corners, charuco_ids, _marker_corners, marker_ids = (
+                self.charuco_detector.detectBoard(gray)
             )
 
-            if ids is None or len(ids) == 0:
+            if marker_ids is None or len(marker_ids) == 0:
                 self.get_logger().warn(f"Camera {cam_id}: no markers detected")
                 continue
 
-            # Interpolate ChArUco corners
-            num_corners, charuco_corners, charuco_ids = (
-                cv2.aruco.interpolateCornersCharuco(
-                    corners, ids, gray, self.charuco_board
-                )
-            )
-
+            num_corners = 0 if charuco_ids is None else int(len(charuco_ids))
             if num_corners < self.min_corners:
                 self.get_logger().warn(
                     f"Camera {cam_id}: only {num_corners} corners "
@@ -221,7 +216,7 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == "__main__":
