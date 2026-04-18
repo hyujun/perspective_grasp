@@ -50,8 +50,40 @@ Merges depth point clouds from multiple eye-to-hand cameras into a single unifie
 - `rclcpp`, `sensor_msgs`, `tf2_ros`, `tf2_sensor_msgs`, `pcl_conversions`, `message_filters`, `diagnostic_msgs`
 - PCL (common, filters, kdtree)
 
+## Library targets
+
+Two libraries plus a thin executable so the node class can be linked into the smoke test without
+pulling in the executable's `main()`:
+
+| Target | Source | Purpose |
+|---|---|---|
+| `pcl_merge_lib` | `cloud_preprocessor.cpp`, `overlap_filter.cpp` | Pure-logic PCL pipeline stages (PassThrough / SOR / KD-tree overlap scoring) |
+| `pcl_merge_node_core` | `merge_node.cpp` | `MergeNode` class (rclcpp, message_filters, TF2); links `pcl_merge_lib` |
+| `merge_node` (exe) | `merge_main.cpp` | Thin `rclcpp::init` + `spin` wrapper |
+
 ## Build
 
 ```bash
 colcon build --packages-select pcl_merge_node
 ```
+
+## Tests
+
+`ament_cmake_gtest` — 23 cases across 3 binaries:
+
+| Binary | Cases | What it covers |
+|---|---:|---|
+| `test_cloud_merger` | 8 | Empty / null input, all-outside-Z-range → empty, mixed in/out range filtering, SOR drops noise outliers, `setParams()` reflects on next `process`, `table_height` shift re-windows Z, VoxelGrid dedup ratio on merged duplicates |
+| `test_overlap_filter` | 8 | Non-overlapping → all count=1, identical → all count=2, partial overlap mixes counts, empty merged, null merged, one source null → counts in {0,1}, shrinking radius reduces count, `getOverlapCount` out-of-range returns 0 |
+| `test_merge_node_smoke` | 4 | `source_topics` size 1 / 2 / 3 selects PASSTHROUGH / MERGE_2 / MERGE_N mode, `/merged/points` advertised; drives a `SingleThreadedExecutor` for ~200 ms per case |
+
+```bash
+colcon test --packages-select pcl_merge_node
+colcon test-result --verbose
+
+# Drop into a single binary for gdb / --gtest_filter
+./build/pcl_merge_node/test_overlap_filter --gtest_filter=OverlapFilter.Shrinking*
+```
+
+Tests run against synthetic PCL clouds (procedural grid + dense noise cluster helpers) — no
+camera, GPU, or live ROS graph required.

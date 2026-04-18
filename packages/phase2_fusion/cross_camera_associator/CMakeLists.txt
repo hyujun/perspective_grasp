@@ -26,23 +26,48 @@ target_include_directories(cross_camera_lib PUBLIC
 ament_target_dependencies(cross_camera_lib rclcpp perception_msgs)
 target_link_libraries(cross_camera_lib Eigen3::Eigen)
 
-# ROS node
-add_executable(associator_node src/associator_node.cpp)
-target_include_directories(associator_node PRIVATE include)
-ament_target_dependencies(associator_node
+# Node class as a library so the smoke test can link it without main()
+add_library(cross_camera_node_core src/associator_node.cpp)
+target_include_directories(cross_camera_node_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(cross_camera_node_core
   rclcpp tf2_ros tf2_eigen tf2_geometry_msgs geometry_msgs perception_msgs diagnostic_msgs)
-target_link_libraries(associator_node cross_camera_lib)
+target_link_libraries(cross_camera_node_core cross_camera_lib)
+
+# Executable is a thin wrapper around the node library
+add_executable(associator_node src/associator_main.cpp)
+target_link_libraries(associator_node cross_camera_node_core)
+ament_target_dependencies(associator_node rclcpp)
 
 install(TARGETS associator_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS cross_camera_lib cross_camera_node_core
+  EXPORT ${PROJECT_NAME}_targets
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+
   ament_add_gtest(test_hungarian_solver test/test_hungarian_solver.cpp)
   target_link_libraries(test_hungarian_solver cross_camera_lib)
+
   ament_add_gtest(test_global_id_manager test/test_global_id_manager.cpp)
   target_link_libraries(test_global_id_manager cross_camera_lib)
+
+  ament_add_gtest(test_union_find test/test_union_find.cpp)
+  target_include_directories(test_union_find PRIVATE include)
+
+  ament_add_gtest(test_camera_pose_buffer test/test_camera_pose_buffer.cpp)
+  target_link_libraries(test_camera_pose_buffer cross_camera_lib)
+
+  ament_add_gtest(test_associator_node_smoke test/test_associator_node_smoke.cpp)
+  target_link_libraries(test_associator_node_smoke cross_camera_node_core)
 endif()
 
 ament_package()

@@ -298,11 +298,3 @@ void MergeNode::publishDiagnostics(const std::string& detail,
 }
 
 }  // namespace perspective_grasp
-
-int main(int argc, char** argv) {
-  rclcpp::init(argc, argv);
-  auto node = std::make_shared<perspective_grasp::MergeNode>();
-  rclcpp::spin(node);
-  rclcpp::shutdown();
-  return 0;
-}

@@ -28,24 +28,43 @@ target_include_directories(pcl_merge_lib PUBLIC
 target_link_libraries(pcl_merge_lib PUBLIC ${PCL_LIBRARIES})
 target_include_directories(pcl_merge_lib PUBLIC ${PCL_INCLUDE_DIRS})
 
-# Node
-add_executable(merge_node src/merge_node.cpp)
-target_include_directories(merge_node PRIVATE include)
-ament_target_dependencies(merge_node
+# Node class as a library so the smoke test can link it without main()
+add_library(pcl_merge_node_core src/merge_node.cpp)
+target_include_directories(pcl_merge_node_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(pcl_merge_node_core
   rclcpp sensor_msgs tf2_ros tf2_sensor_msgs
   pcl_conversions message_filters diagnostic_msgs)
-target_link_libraries(merge_node pcl_merge_lib)
+target_link_libraries(pcl_merge_node_core pcl_merge_lib)
+
+# Executable is a thin wrapper around the node library
+add_executable(merge_node src/merge_main.cpp)
+target_link_libraries(merge_node pcl_merge_node_core)
+ament_target_dependencies(merge_node rclcpp)
 
 install(TARGETS merge_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS pcl_merge_lib pcl_merge_node_core
+  EXPORT ${PROJECT_NAME}_targets
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+
   ament_add_gtest(test_cloud_merger test/test_cloud_merger.cpp)
   target_link_libraries(test_cloud_merger pcl_merge_lib)
+
   ament_add_gtest(test_overlap_filter test/test_overlap_filter.cpp)
   target_link_libraries(test_overlap_filter pcl_merge_lib)
+
+  ament_add_gtest(test_merge_node_smoke test/test_merge_node_smoke.cpp)
+  target_link_libraries(test_merge_node_smoke pcl_merge_node_core)
 endif()
 
 ament_package()

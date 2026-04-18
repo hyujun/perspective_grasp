@@ -55,20 +55,24 @@ colcon build --packages-select grasp_pose_planner
 
 ## Tests
 
-Unit tests use `ament_cmake_gtest`. Two test surfaces ship today:
+Unit tests use `ament_cmake_gtest`. Three test surfaces ship today:
 
 | Phase | Packages | Binaries | Cases | Notes |
 |---|---|---:|---:|---|
 | Phase 1 | `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator` | 5 | 29 | Tracker state machine, CAD loader, `pcl_utils`, hybrid registrator, FPFH |
+| Phase 2 | `cross_camera_associator`, `pcl_merge_node` | 8 | 69 | Hungarian / union-find / global-id / pose buffer / overlap filter + rclcpp smoke tests for both nodes |
 | Infrastructure | `multi_camera_calibration`, `perception_meta_controller`, `perception_debug_visualizer` | 8 | 60 | Pure-logic detail libraries + rclcpp smoke tests for the two nodes |
 
-Other packages (Phase 2/3 fusion + filtering, Phase 4 ML, Phase 5 manipulation) do not yet ship tests.
+Other packages (Phase 3 filtering, Phase 4 ML, Phase 5 manipulation) do not yet ship tests.
 
 ```bash
 cd ~/ros2_ws/perspective_ws
 
 # Phase 1
 colcon test --packages-select teaser_icp_hybrid_registrator yolo_pcl_cpp_tracker
+
+# Phase 2 (cross_camera_associator / pcl_merge_node)
+colcon test --packages-select cross_camera_associator pcl_merge_node
 
 # Infrastructure (multi_camera_calibration / meta_controller / debug_visualizer)
 colcon test --packages-select multi_camera_calibration perception_meta_controller perception_debug_visualizer
@@ -78,6 +82,7 @@ colcon test-result --verbose
 
 # Drop into a single binary for gdb / --gtest_filter
 ./build/yolo_pcl_cpp_tracker/test_pcl_utils --gtest_filter=CropToRoi.*
+./build/cross_camera_associator/test_hungarian_solver --gtest_filter=HungarianSolver.NonSquare*
 ./build/multi_camera_calibration/test_charuco_detector --gtest_filter=CharucoDetectorTest.Detects*
 ```
 
@@ -92,8 +97,11 @@ Notes:
   - `multi_camera_calibration` → `calibration_lib` (with extracted `detail/pose_converters.hpp`, `detail/pose6d.hpp`)
   - `perception_meta_controller` → `mode_logic` (mode→nodes mapping, visibility tracker) + `meta_controller_core` (node class) + thin `meta_controller_main.cpp`
   - `perception_debug_visualizer` → `overlay` (drawing helpers) + `visualizer_core` (node class) + thin `visualizer_main.cpp`
+  - `cross_camera_associator` → `cross_camera_lib` (Hungarian / GlobalIdManager / CameraPoseBuffer) + `cross_camera_node_core` (node class) + thin `associator_main.cpp`
+  - `pcl_merge_node` → `pcl_merge_lib` (CloudPreprocessor / OverlapFilter) + `pcl_merge_node_core` (node class) + thin `merge_main.cpp`
   Don't re-inline these sources back into the executable.
-- The two rclcpp smoke tests (`test_meta_controller_smoke`, `test_visualizer_smoke`) construct the node, drive it via real publishers/services, and spin a `SingleThreadedExecutor` until the expected output appears (with a 2 s deadline).
+- The four rclcpp smoke tests (`test_meta_controller_smoke`, `test_visualizer_smoke`, `test_associator_node_smoke`, `test_merge_node_smoke`) construct the node, drive it via real publishers/services, and spin a `SingleThreadedExecutor` until the expected output appears (with a 2 s deadline).
+- **`RCL_ROS_TIME` gotcha.** Any code that feeds a `rclcpp::Time` built from a message `header.stamp` into arithmetic must use `RCL_ROS_TIME`. `rclcpp::Time(int64_t)` defaults to `RCL_SYSTEM_TIME`; subtracting mixed clock types throws. Test helpers pass `RCL_ROS_TIME` explicitly.
 
 ## Rebuilding Docker images
 

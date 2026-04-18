@@ -5,12 +5,13 @@ RGB-D camera-based 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation
 **17 ROS 2 packages** across 5 phases + debug visualizer + multi-camera support + calibration + bringup.
 
 **Current status**: C++ packages (Phase 1-3, fusion, infra) are implemented. Phase 1 has 29 gtest
-unit tests; the 3 infrastructure packages add another 60 gtest cases (8 binaries) — pure-logic
-tests on extracted detail libraries plus rclcpp smoke tests for `MetaControllerNode` and
-`VisualizerNode`. Phase 4 ML nodes: **SAM2** and **FoundationPose** are wired end-to-end (pluggable
-real+mock backends, docker runtimes, multi-cam fan-out); **MegaPose / CosyPose / BundleSDF** remain
-stubs. Phase 5 **grasp_pose_planner** antipodal planner is implemented (robot-agnostic planner +
-`Hand10DoF` adapter).
+unit tests; Phase 2 adds another 69 gtest cases (8 binaries) across `cross_camera_associator` +
+`pcl_merge_node`; the 3 infrastructure packages add another 60 gtest cases (8 binaries) —
+pure-logic tests on extracted detail libraries plus rclcpp smoke tests for `AssociatorNode`,
+`MergeNode`, `MetaControllerNode`, and `VisualizerNode`. Phase 4 ML nodes: **SAM2** and
+**FoundationPose** are wired end-to-end (pluggable real+mock backends, docker runtimes, multi-cam
+fan-out); **MegaPose / CosyPose / BundleSDF** remain stubs. Phase 5 **grasp_pose_planner**
+antipodal planner is implemented (robot-agnostic planner + `Hand10DoF` adapter).
 
 ## Directory Layout
 ```
@@ -76,6 +77,10 @@ source install/setup.bash
 colcon test --packages-select teaser_icp_hybrid_registrator yolo_pcl_cpp_tracker
 colcon test-result --verbose
 
+# Run Phase 2 unit tests (69 tests across Hungarian / union-find / global-id / overlap filter + rclcpp smoke)
+colcon test --packages-select cross_camera_associator pcl_merge_node
+colcon test-result --verbose
+
 # Run infrastructure unit tests (60 tests; Ceres-gated optimizer convergence skips if unavailable)
 colcon test --packages-select multi_camera_calibration perception_meta_controller perception_debug_visualizer
 colcon test-result --verbose
@@ -94,7 +99,7 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 - **Interfaces**: `perception_msgs` — 12 msgs, 1 srv (`SetMode`), 2 actions (`AnalyzeScene`, `PlanGrasp`)
 - **Bringup**: `perception_bringup` — system-level launches (`perception_system.launch.py`, `phase1_bringup.launch.py`) + shared `camera_config*.yaml`
 - **Phase 1**: `yolo_pcl_cpp_tracker`, `teaser_icp_hybrid_registrator`
-- **Phase 2 (Fusion)**: `cross_camera_associator`, `pcl_merge_node`
+- **Phase 2 (Fusion)**: `cross_camera_associator`, `pcl_merge_node` (69 gtests / 8 binaries; node lib split so smoke tests link class without `main()`)
 - **Phase 3 (Filtering)**: `pose_filter_cpp` (SE(3) IEKF), `pose_graph_smoother` (GTSAM, optional)
 - **Phase 4 (Refinement)**: `isaac_foundationpose_tracker` (done — backends + Docker), `sam2_instance_segmentor` (done), `megapose_ros2_wrapper` (stub), `cosypose_scene_optimizer` (stub), `bundlesdf_unknown_tracker` (stub)
 - **Phase 5 (Manipulation, stub)**: `grasp_pose_planner`
