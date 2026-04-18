@@ -188,10 +188,10 @@ RUN pip3 install --no-cache-dir --break-system-packages \
         panda3d==1.10.14 joblib==1.4.2 \
         pybullet==3.2.6 bokeh==3.6.0 plyfile==1.1
 
-# PyTorch3D — source install against the torch above. Pin to a tag
-# known compatible with torch 2.6 as of 2026-04.
+# PyTorch3D — source install against the torch above. Upstream skipped
+# v0.7.8; v0.7.9 is the first tag shipping torch 2.6 / cu126 support.
 RUN pip3 install --no-cache-dir --break-system-packages \
-        "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.8"
+        "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.9"
 
 # happypose = MegaPose + CosyPose under one roof. Weight / dataset
 # trees are volume-mounted at runtime (see COSYPOSE_WEIGHTS /

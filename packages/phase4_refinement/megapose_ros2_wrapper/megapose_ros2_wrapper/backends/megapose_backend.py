@@ -23,6 +23,7 @@ Design notes
 from __future__ import annotations
 
 import os
+import subprocess
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -87,6 +88,8 @@ class MegaPoseBackend(BaseMegaBackend):
             )
         if self._dataset_dir:
             os.environ.setdefault('HAPPYPOSE_DATA_DIR', self._dataset_dir)
+
+        _log_happypose_version(self._node)
 
         import torch  # type: ignore
         from happypose.toolbox.inference.types import (  # type: ignore
@@ -214,6 +217,19 @@ class MegaPoseBackend(BaseMegaBackend):
                 object_id=src.object_id,
             ))
         return out
+
+
+def _log_happypose_version(node: Node) -> None:
+    # Why: happypose is pre-1.0. Log version + install path at load() so
+    # API drift surfaces in container logs before inference breaks.
+    try:
+        out = subprocess.check_output(
+            ['pip', 'show', 'happypose'], stderr=subprocess.STDOUT, timeout=5,
+        ).decode(errors='replace').strip()
+    except Exception as e:  # noqa: BLE001
+        node.get_logger().warn(f'pip show happypose failed: {e}')
+        return
+    node.get_logger().info(f'happypose install info:\n{out}')
 
 
 def _discover_meshes(mesh_dir: str) -> dict[str, str]:
