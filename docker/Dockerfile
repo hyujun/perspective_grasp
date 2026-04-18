@@ -13,7 +13,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: ros-ml-base — CUDA + ROS 2 Jazzy (minimal, no desktop)
 # ---------------------------------------------------------------------------
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04 AS ros-ml-base
+FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04 AS ros-ml-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
@@ -52,10 +52,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-image-transport \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Python packages commonly needed by ML nodes ----
-RUN pip3 install --no-cache-dir --break-system-packages \
-        numpy \
-        opencv-python-headless
+# numpy is provided by python3-numpy (debian); OpenCV Python bindings come
+# via ros-jazzy-cv-bridge. Skip pip installs here to avoid clashing with
+# externally-managed system packages.
 
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /etc/bash.bashrc
 
@@ -78,6 +77,34 @@ FROM ros-ml-base AS ml-base
 COPY --from=msgs-builder /ws/install /ws/install
 
 RUN echo "source /ws/install/setup.bash" >> /etc/bash.bashrc
+
+WORKDIR /ws
+CMD ["bash"]
+
+# ---------------------------------------------------------------------------
+# Stage 4: sam2-runtime — ml-base + PyTorch + Meta SAM2
+#
+# Separate stage so SAM2's PyTorch version does not clash with other
+# Phase 4 services (kaolin/nvdiffrast/PyTorch3D have their own pins).
+# ---------------------------------------------------------------------------
+FROM ml-base AS sam2-runtime
+
+# Pin numpy<2 — cv_bridge/cv2 shipped by ROS Jazzy is built against the
+# NumPy 1.x C ABI; letting pip pull NumPy 2.x breaks cv2 at import time.
+# Install this FIRST (with --ignore-installed) so the debian-managed
+# numpy 1.26 gets shadowed by a pip-managed 1.x in /usr/local, and later
+# torch / sam2 installs pick it up without attempting their own upgrade.
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+        "numpy<2"
+
+# PyTorch with CUDA 12.6 runtime. Versions pinned for reproducibility.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        --index-url https://download.pytorch.org/whl/cu126 \
+        torch==2.6.0 torchvision==0.21.0
+
+# Meta's SAM2 (segment-anything-2). Installs hydra-core + iopath as deps.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        "git+https://github.com/facebookresearch/sam2.git@main"
 
 WORKDIR /ws
 CMD ["bash"]

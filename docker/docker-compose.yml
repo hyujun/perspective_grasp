@@ -80,20 +80,33 @@ services:
 
   # -----------------------------------------------------------------------
   # SAM2 — Segment Anything Model 2 for instance segmentation
-  # Needs: PyTorch + segment-anything-2 + specific model checkpoints
+  # Needs: PyTorch 2.5 + Meta SAM2. Uses a dedicated Dockerfile target
+  # (sam2-runtime) so the PyTorch pin does not clash with other services.
   # -----------------------------------------------------------------------
   sam2:
     <<: *gpu-common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: sam2-runtime
+    image: perspective_grasp/sam2:latest
     container_name: pg_sam2
     volumes:
       - ../packages/phase4_refinement/sam2_instance_segmentor:/ws/src/sam2_instance_segmentor
+      - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${SAM2_WEIGHTS:-../models/sam2}:/ws/models/sam2
+    # SAM2_CAMERA_CONFIG selects the camera topology:
+    #   unset / empty  → one non-namespaced /sam2_segmentor (single-cam default)
+    #   /ws/config/camera_config_1cam.yaml → same (empty ns in that file)
+    #   /ws/config/camera_config_2cam.yaml → /cam0 + /cam1 fan-out
+    #   /ws/config/camera_config.yaml      → /cam0 + /cam1 + /cam2 fan-out
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
+        cd /ws && colcon build --packages-select sam2_instance_segmentor &&
         source /ws/install/setup.bash &&
         echo '[SAM2] Container ready.' &&
-        ros2 launch sam2_instance_segmentor sam2_segmentor.launch.py
+        ros2 launch sam2_instance_segmentor sam2_segmentor.launch.py ${SAM2_CAMERA_CONFIG:+camera_config:=$SAM2_CAMERA_CONFIG}
       "
 
   # -----------------------------------------------------------------------
