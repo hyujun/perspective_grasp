@@ -63,3 +63,27 @@ auto result = registrator.refineIcp(source_cloud, target_cloud, initial_guess);
 ```bash
 colcon build --packages-select teaser_icp_hybrid_registrator
 ```
+
+## Tests
+
+`ament_cmake_gtest` — 10 cases across 2 binaries. The 3 `align()` cases are
+mutually exclusive on `HAS_TEASERPP` (CMake-time define), so 8 actually execute on a
+given build:
+
+| Binary | Cases | What it covers |
+|---|---:|---|
+| `test_hybrid_registration` | 6 + 2 gated (or 1 placeholder) | `refineIcp` known transform, small perturbation, noisy scene, empty inputs report failure, `elapsed_ms > 0`, `updateConfig` affects the next call. **HAS_TEASERPP**: `align` recovers known transform + `align` on empty inputs fails. **!HAS_TEASERPP**: a single `AlignTestsSkippedNoTeaser` placeholder marks the gap. |
+| `test_fpfh_extractor` | 3 | FPFH returns one descriptor per point, all descriptors are finite, sparse cloud does not crash |
+
+```bash
+colcon test --packages-select teaser_icp_hybrid_registrator
+colcon test-result --verbose
+
+# Filter inside a single binary
+./build/teaser_icp_hybrid_registrator/test_hybrid_registration --gtest_filter=HybridRegistrator.IcpRefine*
+```
+
+`HAS_TEASERPP` is set automatically when the build finds TEASER++ — install via
+[scripts/install_dependencies.sh](../../../scripts/install_dependencies.sh) to enable
+the gated align tests. Tests use synthetic point clouds (no fixtures, no GPU, no
+camera).
