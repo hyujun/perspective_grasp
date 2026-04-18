@@ -178,26 +178,75 @@ RUN pip3 install --no-cache-dir --break-system-packages \
         torch==2.6.0 torchvision==0.21.0
 
 # happypose runtime deps pulled ahead of happypose itself so source
-# builds (pytorch3d) see the right numeric stack.
+# builds (pytorch3d) see the right numeric stack. pybind11 is a build-
+# time dep for cosypose's C++ extension (cosypose_cext). `"numpy<2"`
+# is re-asserted here because scikit-image / pandas / seaborn pull
+# numpy 2.x through transitive resolution otherwise, which breaks
+# cv_bridge at runtime (NumPy 1.x C ABI).
 RUN pip3 install --no-cache-dir --break-system-packages \
+        "numpy<2" \
         trimesh==4.5.3 \
         opencv-python-headless==4.10.0.84 \
         scipy==1.14.1 scikit-image==0.24.0 \
         imageio==2.36.0 omegaconf==2.3.0 \
         pandas==2.2.3 transforms3d==0.4.2 \
         panda3d==1.10.14 joblib==1.4.2 \
-        pybullet==3.2.6 bokeh==3.6.0 plyfile==1.1
+        pybullet==3.2.6 bokeh==3.6.0 plyfile==1.1 \
+        pybind11==2.13.6 webdataset==0.2.100 \
+        pypng==0.20220715.0 addict==2.4.0 meshcat==0.3.2 \
+        roma==1.5.0 torchnet==0.0.4 seaborn==0.13.2
 
 # PyTorch3D — source install against the torch above. Upstream skipped
 # v0.7.8; v0.7.9 is the first tag shipping torch 2.6 / cu126 support.
 RUN pip3 install --no-cache-dir --break-system-packages \
         "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.9"
 
-# happypose = MegaPose + CosyPose under one roof. Weight / dataset
-# trees are volume-mounted at runtime (see COSYPOSE_WEIGHTS /
-# MEGAPOSE_WEIGHTS in docker-compose).
-RUN pip3 install --no-cache-dir --break-system-packages \
+# happypose: clone the full repo (with submodules) instead of relying
+# on `pip install git+URL` alone. The upstream pyproject uses uv's
+# workspace model, so pip-via-git pulls only the outer shell — the
+# real CosyPose + MegaPose code under happypose/pose_estimators/**
+# gets skipped. We do BOTH:
+#   1. `pip install --no-deps git+URL` so `importlib.metadata.metadata
+#      ("happypose")` resolves (happypose/__init__.py reads version +
+#      author from dist-info at import time; without the dist-info
+#      every `import happypose.*` raises PackageNotFoundError).
+#   2. clone the tree with submodules into /opt/happypose so the real
+#      modules are available on disk.
+#   3. install the cosypose subproject (has pybind11 C++ ext and sets
+#      up the top-level `cosypose` namespace the backend uses).
+#   4. add /opt/happypose to PYTHONPATH so happypose.* resolves to
+#      the full source tree instead of the pip-installed shell.
+# See memory/happypose_install_trap.md for the debugging trail.
+RUN pip3 install --no-cache-dir --break-system-packages --no-deps \
         "git+https://github.com/agimus-project/happypose.git@main"
+
+# Runtime deps happypose declares but `--no-deps` skipped above. pin
+# is pinocchio's python binding (SE(3) maths); the cmeel-* helpers
+# get pulled in transitively. Only deps happypose actually imports
+# on the pose-estimation path go here — `torchtnt`, `xarray`,
+# `scikit-learn` are pyproject-declared but unused by the CosyPose +
+# MegaPose modules, and adding them destabilises the resolver (e.g.
+# old-xarray → pandas<2 source build with missing pkg_resources).
+# Add entries below only when a concrete import-time failure demands
+# them, so the resolver stays in a pinned corner.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        "numpy<2" \
+        "pin>=2.7" simplejson pyyaml tqdm beautifulsoup4
+
+# No `--recurse-submodules`: happypose's `.gitmodules` references
+# paths (`cosypose/deps/*`) that no longer exist in the repo, so the
+# flag just wastes time probing 404s. The bits happypose actually
+# uses at runtime live in `happypose/pose_estimators/**`, which is
+# regular source.
+RUN git clone --depth 1 \
+        https://github.com/agimus-project/happypose.git /opt/happypose
+
+# cosypose subproject: has pybind11 C++ ext (cosypose_cext) and sets
+# up the top-level `cosypose` namespace.
+RUN cd /opt/happypose/happypose/pose_estimators/cosypose \
+    && pip3 install --no-cache-dir --break-system-packages --no-deps -e .
+
+ENV PYTHONPATH=/opt/happypose:${PYTHONPATH}
 
 # happypose drives its data-tree discovery off this env var; node
 # params (`dataset_dir`) override it per-invocation when set.

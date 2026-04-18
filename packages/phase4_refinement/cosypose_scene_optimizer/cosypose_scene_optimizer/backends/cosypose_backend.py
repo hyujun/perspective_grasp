@@ -9,18 +9,22 @@ Design notes
 ------------
 * **Pre-computed detections.** We pass YOLO detections through as
   happypose ``DetectionsType`` — no need to run a happypose detector.
-* **Dataset-driven mesh registry.** happypose resolves meshes by BOP
-  dataset id (``ycbv``, ``tless``, …). ``dataset_name`` selects the
-  registry; the mesh set inside ``$HAPPYPOSE_DATA_DIR`` is the source
-  of truth. A prompt whose class name is not in the registry is
-  silently dropped (logged at debug level).
+* **Mesh-file-driven registry.** ``mesh_dir`` is scanned at load()
+  for ``<label>.(obj|ply)``; each becomes a ``RigidObject`` entry in
+  the happypose ``RigidObjectDataset`` that drives both rendering
+  and mesh-db construction. This matches the MegaPose backend layout
+  exactly so meshes can be shared between the two nodes without
+  duplication. A prompt whose class name has no mesh is silently
+  dropped (logged at debug level).
 * **Coarse + refine iterations.** Parametrised so tuning does not
   require a container rebuild. Defaults match happypose CosyPose
   recommended config (1 coarse / 4 refine).
-* **API risk.** happypose is still pre-1.0; the import paths and
-  ``run_inference_pipeline`` signature below are the stable-looking
-  surfaces as of 2026-04. First live run should log ``pip show
-  happypose`` so upstream drift surfaces in container logs.
+* **API surface (verified against agimus-project/happypose @main,
+  2026-04):** ``happypose.toolbox.inference.utils.load_pose_models``
+  and ``happypose.pose_estimators.cosypose.cosypose.integrated
+  .pose_estimator.PoseEstimator`` are the real entry points.
+  ``_log_happypose_version`` at load() pins the exact commit in
+  container logs so future drift surfaces loudly.
 """
 
 from __future__ import annotations
@@ -49,6 +53,14 @@ class CosyPoseBackend(BaseSceneBackend):
         )
         self._dataset_name: str = (
             node.declare_parameter('dataset_name', 'ycbv')
+            .get_parameter_value().string_value
+        )
+        self._mesh_dir: str = (
+            node.declare_parameter('mesh_dir', '')
+            .get_parameter_value().string_value
+        )
+        self._mesh_units: str = (
+            node.declare_parameter('mesh_units', 'mm')
             .get_parameter_value().string_value
         )
         self._coarse_run_id: str = (
@@ -80,6 +92,7 @@ class CosyPoseBackend(BaseSceneBackend):
         self._estimator: Any = None
         self._observation_cls: Any = None
         self._make_detections_fn: Any = None
+        self._object_data_cls: Any = None
         self._known_classes: set[str] = set()
 
     # ------------------------------------------------------------------
@@ -93,11 +106,19 @@ class CosyPoseBackend(BaseSceneBackend):
             raise RuntimeError(
                 f"dataset_dir '{self._dataset_dir}' is missing or not a directory"
             )
+        if not self._mesh_dir or not os.path.isdir(self._mesh_dir):
+            raise RuntimeError(
+                f"mesh_dir '{self._mesh_dir}' is missing or not a directory"
+            )
         os.environ.setdefault('HAPPYPOSE_DATA_DIR', self._dataset_dir)
 
         _log_happypose_version(self._node)
 
         import torch  # type: ignore
+        from happypose.toolbox.datasets.object_dataset import (  # type: ignore
+            RigidObject, RigidObjectDataset,
+        )
+        from happypose.toolbox.datasets.scene_dataset import ObjectData  # type: ignore
         from happypose.toolbox.inference.types import (  # type: ignore
             ObservationTensor,
         )
@@ -105,42 +126,43 @@ class CosyPoseBackend(BaseSceneBackend):
             load_pose_models,
             make_detections_from_object_data,
         )
+        from happypose.pose_estimators.cosypose.cosypose.integrated.pose_estimator import (  # type: ignore
+            PoseEstimator,
+        )
 
         self._torch = torch
         self._observation_cls = ObservationTensor
         self._make_detections_fn = make_detections_from_object_data
+        self._object_data_cls = ObjectData
+
+        rigid_objects, mesh_labels = _build_rigid_objects(
+            self._mesh_dir, self._mesh_units, RigidObject,
+        )
+        if not rigid_objects:
+            raise RuntimeError(
+                f"no .obj/.ply meshes found in {self._mesh_dir}"
+            )
+        object_dataset = RigidObjectDataset(rigid_objects)
 
         coarse_run = self._coarse_run_id or f'coarse-bop-{self._dataset_name}-pbr'
         refiner_run = self._refiner_run_id or f'refiner-bop-{self._dataset_name}-pbr'
         self._node.get_logger().info(
             f'Loading CosyPose coarse={coarse_run} refiner={refiner_run} '
-            f'on {self._device}'
+            f'meshes={len(rigid_objects)} on {self._device}'
         )
 
-        coarse_model, refiner_model, mesh_db = load_pose_models(
+        coarse_model, refiner_model, _mesh_db = load_pose_models(
             coarse_run_id=coarse_run,
             refiner_run_id=refiner_run,
-            n_workers=4,
-        )
-        from happypose.pose_estimators.cosypose.cosypose.integrated.pose_estimator import (  # type: ignore
-            PoseEstimator,
+            object_dataset=object_dataset,
+            force_panda3d_renderer=True,
         )
         self._estimator = PoseEstimator(
             refiner_model=refiner_model,
             coarse_model=coarse_model,
             detector_model=None,
-            SO3_grid_size=576,
         )
-        # mesh_db.label_to_category_id is the registry; use its keys as
-        # the "known class" set so we can silently drop unknowns.
-        try:
-            self._known_classes = set(mesh_db.label_to_category_id.keys())
-        except AttributeError:
-            self._known_classes = set()
-            self._node.get_logger().warn(
-                'mesh_db has no label_to_category_id — will not filter '
-                'prompts by known class (all prompts forwarded to happypose)'
-            )
+        self._known_classes = mesh_labels
 
         self._loaded = True
         self._node.get_logger().info(
@@ -175,8 +197,6 @@ class CosyPoseBackend(BaseSceneBackend):
         if not kept:
             return []
 
-        import pandas as pd  # type: ignore
-
         detections_tensor = self._make_detections_fn(object_data)
         obs = self._observation_cls.from_numpy(
             rgb=image_rgb, K=np.asarray(K, dtype=np.float64),
@@ -198,9 +218,9 @@ class CosyPoseBackend(BaseSceneBackend):
     def _filter_prompts(
         self, detections: list[SceneDetection],
         target_classes: list[str] | None,
-    ) -> tuple[list[SceneDetection], list[dict[str, Any]]]:
+    ) -> tuple[list[SceneDetection], list[Any]]:
         kept: list[SceneDetection] = []
-        object_data: list[dict[str, Any]] = []
+        object_data: list[Any] = []
         for d in detections:
             if target_classes and d.class_name not in target_classes:
                 continue
@@ -210,11 +230,10 @@ class CosyPoseBackend(BaseSceneBackend):
                 )
                 continue
             kept.append(d)
-            object_data.append({
-                'label': d.class_name,
-                'bbox_modal': list(d.bbox_xyxy),
-                'score': float(d.confidence),
-            })
+            object_data.append(self._object_data_cls(
+                label=d.class_name,
+                bbox_modal=np.asarray(d.bbox_xyxy, dtype=np.float32),
+            ))
         return kept, object_data
 
     def _predictions_to_results(
@@ -247,6 +266,32 @@ class CosyPoseBackend(BaseSceneBackend):
                 object_id=src.object_id,
             ))
         return out
+
+
+_MESH_EXTS = ('.obj', '.ply')
+
+
+def _build_rigid_objects(
+    mesh_dir: str, mesh_units: str, rigid_object_cls: Any,
+) -> tuple[list[Any], set[str]]:
+    # load_pose_models + Panda3dBatchRenderer accept .obj/.ply only;
+    # .stl is silently ignored. Label = file stem (lowercased) so the
+    # set matches YOLO class names exactly.
+    import pathlib
+    rigid_objects: list[Any] = []
+    labels: set[str] = set()
+    for entry in sorted(os.listdir(mesh_dir)):
+        stem, ext = os.path.splitext(entry)
+        if ext.lower() not in _MESH_EXTS:
+            continue
+        label = stem.lower()
+        rigid_objects.append(rigid_object_cls(
+            label=label,
+            mesh_path=pathlib.Path(mesh_dir) / entry,
+            mesh_units=mesh_units,
+        ))
+        labels.add(label)
+    return rigid_objects, labels
 
 
 def _log_happypose_version(node: Node) -> None:

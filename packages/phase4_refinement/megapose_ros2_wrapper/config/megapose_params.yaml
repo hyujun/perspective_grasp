@@ -23,11 +23,14 @@
     # ── MegaPose backend ─────────────────────────────────────────────
     # dataset_dir sets HAPPYPOSE_DATA_DIR inside the container (shared
     # with CosyPose). mesh_dir points to a flat folder of
-    # `<class_name>.(obj|ply|stl)` meshes — the same layout
-    # FoundationPose uses, so they can share a single mesh tree.
+    # `<class_name>.(obj|ply)` meshes — the same layout FoundationPose
+    # uses, so they can share a single mesh tree. model_name keys into
+    # happypose NAMED_MODELS; its entry carries the real
+    # inference_parameters (n_refiner_iterations, n_pose_hypotheses)
+    # so no hand-tuned iteration count lives here.
     dataset_dir:          "/ws/models/happypose"
     mesh_dir:             "/ws/models/megapose/meshes"
+    mesh_units:           "mm"
     model_name:           "megapose-1.0-RGB-multi-hypothesis"
-    n_refiner_iterations: 5
     score_threshold:      0.3
     device:               "cuda"

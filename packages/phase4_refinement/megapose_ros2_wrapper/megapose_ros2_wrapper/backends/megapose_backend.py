@@ -8,16 +8,23 @@ Design notes
 ------------
 * **Mesh registry from disk.** Unlike CosyPose (dataset-driven),
   MegaPose is zero-shot and can accept any mesh at inference — we
-  scan ``mesh_dir`` for ``<class_name>.(obj|ply|stl)`` at load time
-  and index one label → path entry per mesh. A prompt whose class
-  has no mesh is silently dropped (logged at debug level).
-* **Refiner-only integration.** Initial wiring runs happypose's
-  default coarse + refine pipeline; no iterative self-supervision
-  loop. Depth fusion can be added later if accuracy demands it.
-* **API risk.** happypose is pre-1.0; the import paths and
-  ``run_inference_pipeline`` signature below are the stable-looking
-  surfaces as of 2026-04. First live run should log ``pip show
-  happypose`` in the node so upstream drift surfaces loudly.
+  scan ``mesh_dir`` for ``<class_name>.(obj|ply)`` at load time and
+  build a happypose ``RigidObjectDataset`` that the model uses for
+  rendering. A prompt whose class has no mesh is silently dropped
+  (logged at debug level).
+* **Named-model driven.** happypose ships a ``NAMED_MODELS`` dict
+  keyed by model string (``megapose-1.0-RGB``,
+  ``megapose-1.0-RGB-multi-hypothesis``, …). Each entry bundles the
+  coarse/refiner run ids plus the ``inference_parameters`` dict we
+  pass straight through to ``run_inference_pipeline``. No hand-
+  rolled iteration tuning — the upstream dict is the source of truth.
+* **API surface (verified against agimus-project/happypose @main,
+  2026-04):** ``happypose.toolbox.utils.load_model`` (not the
+  ``pose_estimators.megapose.inference`` path our first cut guessed)
+  owns both ``load_named_model`` and ``NAMED_MODELS``. The
+  ``PoseEstimator`` it returns is already ``.to(device)``-ready.
+  ``_log_happypose_version`` at load() pins the exact commit in
+  container logs so future drift surfaces loudly.
 """
 
 from __future__ import annotations
@@ -34,7 +41,7 @@ if TYPE_CHECKING:
     from rclpy.node import Node
 
 
-_MESH_EXTS = ('.obj', '.ply', '.stl')
+_MESH_EXTS = ('.obj', '.ply')
 
 
 class MegaPoseBackend(BaseMegaBackend):
@@ -56,9 +63,9 @@ class MegaPoseBackend(BaseMegaBackend):
                 'model_name', 'megapose-1.0-RGB-multi-hypothesis',
             ).get_parameter_value().string_value
         )
-        self._n_refiner_iterations: int = (
-            node.declare_parameter('n_refiner_iterations', 5)
-            .get_parameter_value().integer_value
+        self._mesh_units: str = (
+            node.declare_parameter('mesh_units', 'mm')
+            .get_parameter_value().string_value
         )
         self._score_threshold: float = (
             node.declare_parameter('score_threshold', 0.3)
@@ -73,7 +80,9 @@ class MegaPoseBackend(BaseMegaBackend):
         self._estimator: Any = None
         self._observation_cls: Any = None
         self._make_detections_fn: Any = None
-        self._meshes: dict[str, str] = {}
+        self._object_data_cls: Any = None
+        self._inference_params: dict[str, Any] = {}
+        self._known_classes: set[str] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -92,49 +101,59 @@ class MegaPoseBackend(BaseMegaBackend):
         _log_happypose_version(self._node)
 
         import torch  # type: ignore
+        from happypose.toolbox.datasets.object_dataset import (  # type: ignore
+            RigidObject, RigidObjectDataset,
+        )
+        from happypose.toolbox.datasets.scene_dataset import ObjectData  # type: ignore
         from happypose.toolbox.inference.types import (  # type: ignore
             ObservationTensor,
         )
         from happypose.toolbox.inference.utils import (  # type: ignore
             make_detections_from_object_data,
         )
-        from happypose.pose_estimators.megapose.inference.pose_estimator import (  # type: ignore
-            PoseEstimator,
-        )
-        from happypose.pose_estimators.megapose.inference.utils import (  # type: ignore
-            load_named_model,
+        from happypose.toolbox.utils.load_model import (  # type: ignore
+            NAMED_MODELS, load_named_model,
         )
 
         self._torch = torch
         self._observation_cls = ObservationTensor
         self._make_detections_fn = make_detections_from_object_data
+        self._object_data_cls = ObjectData
 
-        meshes = _discover_meshes(self._mesh_dir)
-        if not meshes:
+        if self._model_name not in NAMED_MODELS:
             raise RuntimeError(
-                f"no meshes ({'|'.join(_MESH_EXTS)}) found in {self._mesh_dir}"
+                f"model_name '{self._model_name}' not in happypose NAMED_MODELS "
+                f"(available: {sorted(NAMED_MODELS)})"
             )
-        self._meshes = meshes
+        self._inference_params = dict(
+            NAMED_MODELS[self._model_name]['inference_parameters'],
+        )
+
+        rigid_objects, labels = _build_rigid_objects(
+            self._mesh_dir, self._mesh_units, RigidObject,
+        )
+        if not rigid_objects:
+            raise RuntimeError(
+                f"no .obj/.ply meshes found in {self._mesh_dir}"
+            )
+        self._known_classes = labels
+        object_dataset = RigidObjectDataset(rigid_objects)
 
         self._node.get_logger().info(
             f'Loading MegaPose model={self._model_name} '
-            f'meshes={len(meshes)} on {self._device}'
+            f'meshes={len(rigid_objects)} on {self._device}'
         )
-        model = load_named_model(
-            self._model_name,
-            mesh_paths=meshes,
-        )
-        self._estimator = PoseEstimator(
-            model=model,
-            device=self._device,
-        )
+        self._estimator = load_named_model(
+            self._model_name, object_dataset,
+        ).to(self._device)
 
         self._loaded = True
         self._node.get_logger().info('MegaPose loaded')
 
     def unload(self) -> None:
         self._estimator = None
-        self._meshes.clear()
+        self._known_classes = set()
+        self._inference_params = {}
         if self._torch is not None:
             try:
                 self._torch.cuda.empty_cache()
@@ -156,19 +175,18 @@ class MegaPoseBackend(BaseMegaBackend):
             raise RuntimeError('MegaPoseBackend.estimate called before load()')
 
         kept: list[MegaPrompt] = []
-        object_data: list[dict[str, Any]] = []
+        object_data: list[Any] = []
         for p in prompts:
-            if p.class_name not in self._meshes:
+            if p.class_name not in self._known_classes:
                 self._node.get_logger().debug(
                     f'no mesh registered for class {p.class_name!r}, skipping'
                 )
                 continue
             kept.append(p)
-            object_data.append({
-                'label': p.class_name,
-                'bbox_modal': list(p.bbox_xyxy),
-                'score': float(p.confidence),
-            })
+            object_data.append(self._object_data_cls(
+                label=p.class_name,
+                bbox_modal=np.asarray(p.bbox_xyxy, dtype=np.float32),
+            ))
         if not kept:
             return []
 
@@ -179,7 +197,7 @@ class MegaPoseBackend(BaseMegaBackend):
         predictions, _extras = self._estimator.run_inference_pipeline(
             observation=obs.to(self._device),
             detections=detections_tensor.to(self._device),
-            n_refiner_iterations=self._n_refiner_iterations,
+            **self._inference_params,
         )
         return self._predictions_to_results(predictions, kept)
 
@@ -232,18 +250,27 @@ def _log_happypose_version(node: Node) -> None:
     node.get_logger().info(f'happypose install info:\n{out}')
 
 
-def _discover_meshes(mesh_dir: str) -> dict[str, str]:
-    """Return {class_name: mesh_path} for every supported file in ``mesh_dir``.
+def _build_rigid_objects(
+    mesh_dir: str, mesh_units: str, rigid_object_cls: Any,
+) -> tuple[list[Any], set[str]]:
+    """Build happypose ``RigidObject`` entries from a flat mesh dir.
 
-    Class name = file stem, lowercased. Flat layout — nested class
-    hierarchies live in the YOLO config, not in the mesh store. This
-    matches the FoundationPose mesh registry exactly so meshes can be
-    shared between the two backends without duplication.
+    Panda3dBatchRenderer accepts .obj/.ply only; .stl is silently
+    ignored. Label = file stem (lowercased) so the set matches YOLO
+    class names exactly and is shareable with the CosyPose backend.
     """
-    found: dict[str, str] = {}
+    import pathlib
+    rigid_objects: list[Any] = []
+    labels: set[str] = set()
     for entry in sorted(os.listdir(mesh_dir)):
         stem, ext = os.path.splitext(entry)
         if ext.lower() not in _MESH_EXTS:
             continue
-        found[stem.lower()] = os.path.join(mesh_dir, entry)
-    return found
+        label = stem.lower()
+        rigid_objects.append(rigid_object_cls(
+            label=label,
+            mesh_path=pathlib.Path(mesh_dir) / entry,
+            mesh_units=mesh_units,
+        ))
+        labels.add(label)
+    return rigid_objects, labels

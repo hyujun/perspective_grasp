@@ -84,6 +84,9 @@ services:
   #     bop_datasets/<dataset>/...         # BOP-formatted object set
   #     experiments/<coarse_run_id>/...    # coarse estimator weights
   #     experiments/<refiner_run_id>/...   # refiner weights
+  # Meshes mount: $MEGAPOSE_MESHES → /ws/models/megapose/meshes
+  #   happypose builds a RigidObjectDataset from this flat dir at
+  #   load(); shared with the megapose service to avoid duplication.
   # COSYPOSE_CAMERA_CONFIG selects the camera topology:
   #   unset / empty  → one non-namespaced /cosypose_optimizer (1-cam)
   #   /ws/config/camera_config_2cam.yaml → /cam0 + /cam1 fan-out
@@ -101,6 +104,7 @@ services:
       - ../packages/phase4_refinement/cosypose_scene_optimizer:/ws/src/cosypose_scene_optimizer
       - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${HAPPYPOSE_WEIGHTS:-../models/happypose}:/ws/models/happypose
+      - ${MEGAPOSE_MESHES:-../models/megapose/meshes}:/ws/models/megapose/meshes
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&

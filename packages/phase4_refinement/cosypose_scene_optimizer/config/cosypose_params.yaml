@@ -27,10 +27,16 @@
     # ── CosyPose backend ─────────────────────────────────────────────
     # dataset_dir is the HAPPYPOSE_DATA_DIR root inside the container
     # (see docker-compose volume mount). dataset_name picks the BOP
-    # subtree (ycbv / tless / lmo / …). coarse_run_id / refiner_run_id
-    # are left empty to use the happypose defaults for that dataset.
+    # subtree (ycbv / tless / lmo / …) used to resolve the default
+    # coarse_run_id / refiner_run_id when those are left blank.
+    # mesh_dir is a flat folder of `<class_name>.(obj|ply)` files —
+    # CosyPose needs real meshes to build a happypose
+    # RigidObjectDataset for Panda3dBatchRenderer. Shared layout with
+    # the MegaPose + FoundationPose nodes so meshes live in one place.
     dataset_dir:          "/ws/models/happypose"
     dataset_name:         "ycbv"
+    mesh_dir:             "/ws/models/megapose/meshes"
+    mesh_units:           "mm"
     coarse_run_id:        ""
     refiner_run_id:       ""
     n_coarse_iterations:  1
