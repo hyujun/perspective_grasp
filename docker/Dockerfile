@@ -65,7 +65,7 @@ RUN echo "source /opt/ros/jazzy/setup.bash" >> /etc/bash.bashrc
 FROM ros-ml-base AS msgs-builder
 
 RUN mkdir -p /ws/src
-COPY perception_msgs /ws/src/perception_msgs
+COPY packages/interfaces/perception_msgs /ws/src/perception_msgs
 
 RUN source /opt/ros/jazzy/setup.bash \
     && cd /ws && colcon build --packages-select perception_msgs

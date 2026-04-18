@@ -4,22 +4,24 @@
 # Host runs: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO
 # Docker runs: GPU-heavy Python ML nodes with complex dependencies
 #
-# Usage:
-#   docker compose build                     # Build all images
-#   docker compose up foundationpose -d      # Start one service
-#   docker compose up -d                     # Start all ML nodes
-#   docker compose logs -f foundationpose    # View logs
-#   docker compose down                      # Stop all
+# Usage (from repo root):
+#   docker compose -f docker/docker-compose.yml build
+#   docker compose -f docker/docker-compose.yml up foundationpose -d
+#   docker compose -f docker/docker-compose.yml logs -f foundationpose
+#   docker compose -f docker/docker-compose.yml down
+#
+# Or from this directory:
+#   cd docker && docker compose build
 #
 # Model weights:
-#   Set env vars or place weights in ./models/<service>/
+#   Set env vars or place weights in <repo_root>/models/<service>/
 #   e.g., export FOUNDATIONPOSE_WEIGHTS=/path/to/weights
 # =============================================================================
 
 x-gpu-common: &gpu-common
   build:
-    context: .
-    dockerfile: Dockerfile
+    context: ..
+    dockerfile: docker/Dockerfile
     target: ml-base
   image: perspective_grasp/ml-base:latest
   network_mode: host
@@ -47,8 +49,8 @@ services:
     <<: *gpu-common
     container_name: pg_foundationpose
     volumes:
-      - ./isaac_foundationpose_tracker:/ws/src/isaac_foundationpose_tracker
-      - ${FOUNDATIONPOSE_WEIGHTS:-./models/foundationpose}:/ws/models/foundationpose
+      - ../packages/phase4_refinement/isaac_foundationpose_tracker:/ws/src/isaac_foundationpose_tracker
+      - ${FOUNDATIONPOSE_WEIGHTS:-../models/foundationpose}:/ws/models/foundationpose
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
@@ -65,9 +67,9 @@ services:
     <<: *gpu-common
     container_name: pg_cosypose
     volumes:
-      - ./cosypose_scene_optimizer:/ws/src/cosypose_scene_optimizer
-      - ./megapose_ros2_wrapper:/ws/src/megapose_ros2_wrapper
-      - ${COSYPOSE_WEIGHTS:-./models/cosypose}:/ws/models/cosypose
+      - ../packages/phase4_refinement/cosypose_scene_optimizer:/ws/src/cosypose_scene_optimizer
+      - ../packages/phase4_refinement/megapose_ros2_wrapper:/ws/src/megapose_ros2_wrapper
+      - ${COSYPOSE_WEIGHTS:-../models/cosypose}:/ws/models/cosypose
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
@@ -84,8 +86,8 @@ services:
     <<: *gpu-common
     container_name: pg_sam2
     volumes:
-      - ./sam2_instance_segmentor:/ws/src/sam2_instance_segmentor
-      - ${SAM2_WEIGHTS:-./models/sam2}:/ws/models/sam2
+      - ../packages/phase4_refinement/sam2_instance_segmentor:/ws/src/sam2_instance_segmentor
+      - ${SAM2_WEIGHTS:-../models/sam2}:/ws/models/sam2
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
@@ -102,8 +104,8 @@ services:
     <<: *gpu-common
     container_name: pg_bundlesdf
     volumes:
-      - ./bundlesdf_unknown_tracker:/ws/src/bundlesdf_unknown_tracker
-      - ${BUNDLESDF_WEIGHTS:-./models/bundlesdf}:/ws/models/bundlesdf
+      - ../packages/phase4_refinement/bundlesdf_unknown_tracker:/ws/src/bundlesdf_unknown_tracker
+      - ${BUNDLESDF_WEIGHTS:-../models/bundlesdf}:/ws/models/bundlesdf
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&

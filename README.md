@@ -1,6 +1,24 @@
 # perspective_grasp
 
-RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulation system. 16 ROS 2 packages across 5 pipeline phases, supporting 1-3 cameras with config-driven topology.
+RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulation system. 17 ROS 2 packages across 5 pipeline phases, supporting 1-3 cameras with config-driven topology.
+
+## Repository Layout
+
+```
+perspective_grasp/
+├── build.sh                      # Phased colcon wrapper
+├── docker/                       # Dockerfile + docker-compose.yml (Phase 4 ML stack)
+├── scripts/                      # Host install scripts
+└── packages/                     # colcon discovers recursively
+    ├── interfaces/               # perception_msgs
+    ├── bringup/                  # perception_bringup (system launches + camera_config*.yaml)
+    ├── phase1_perception/        # yolo_pcl_cpp_tracker, teaser_icp_hybrid_registrator
+    ├── phase2_fusion/            # cross_camera_associator, pcl_merge_node
+    ├── phase3_filtering/         # pose_filter_cpp, pose_graph_smoother
+    ├── phase4_refinement/        # foundationpose, megapose, cosypose, sam2, bundlesdf
+    ├── phase5_manipulation/      # grasp_pose_planner
+    └── infrastructure/           # meta_controller, debug_visualizer, multi_camera_calibration
+```
 
 ## Architecture
 
@@ -75,52 +93,58 @@ RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulat
 
 | Package | Description |
 |---------|-------------|
-| [perception_msgs](perception_msgs/) | Custom message, service, and action definitions (11 msgs, 1 srv, 2 actions) |
+| [perception_msgs](packages/interfaces/perception_msgs/) | Custom message, service, and action definitions (11 msgs, 1 srv, 2 actions) |
+
+### System Bringup
+
+| Package | Description |
+|---------|-------------|
+| [perception_bringup](packages/bringup/perception_bringup/) | System-level launches (`perception_system.launch.py`, `phase1_bringup.launch.py`) and shared `camera_config*.yaml` |
 
 ### Phase 1: Detection & Pose Estimation
 
 | Package | Language | Description |
 |---------|----------|-------------|
-| [yolo_pcl_cpp_tracker](yolo_pcl_cpp_tracker/) | C++ / Python | YOLO + ByteTrack detection with ICP-based 6D pose estimation |
-| [teaser_icp_hybrid_registrator](teaser_icp_hybrid_registrator/) | C++ | Library: TEASER++ global registration + ICP local refinement |
+| [yolo_pcl_cpp_tracker](packages/phase1_perception/yolo_pcl_cpp_tracker/) | C++ / Python | YOLO + ByteTrack detection with ICP-based 6D pose estimation |
+| [teaser_icp_hybrid_registrator](packages/phase1_perception/teaser_icp_hybrid_registrator/) | C++ | Library: TEASER++ global registration + ICP local refinement |
 
 ### Phase 2: Multi-Camera Fusion
 
 | Package | Language | Description |
 |---------|----------|-------------|
-| [cross_camera_associator](cross_camera_associator/) | C++ | Hungarian algorithm + Union-Find for cross-camera object matching |
-| [pcl_merge_node](pcl_merge_node/) | C++ | Point cloud merging, filtering, deduplication from multiple cameras |
+| [cross_camera_associator](packages/phase2_fusion/cross_camera_associator/) | C++ | Hungarian algorithm + Union-Find for cross-camera object matching |
+| [pcl_merge_node](packages/phase2_fusion/pcl_merge_node/) | C++ | Point cloud merging, filtering, deduplication from multiple cameras |
 
 ### Phase 3: Filtering & Smoothing
 
 | Package | Language | Description |
 |---------|----------|-------------|
-| [pose_filter_cpp](pose_filter_cpp/) | C++ | SE(3) IEKF for multi-source pose fusion with outlier rejection |
-| [pose_graph_smoother](pose_graph_smoother/) | C++ | Sliding-window pose graph optimization (GTSAM, optional) |
+| [pose_filter_cpp](packages/phase3_filtering/pose_filter_cpp/) | C++ | SE(3) IEKF for multi-source pose fusion with outlier rejection |
+| [pose_graph_smoother](packages/phase3_filtering/pose_graph_smoother/) | C++ | Sliding-window pose graph optimization (GTSAM, optional) |
 
 ### Phase 4: Refinement (On-Demand)
 
 | Package | Language | Description |
 |---------|----------|-------------|
-| [isaac_foundationpose_tracker](isaac_foundationpose_tracker/) | Python | FoundationPose zero-shot 6D pose tracker (stub) |
-| [megapose_ros2_wrapper](megapose_ros2_wrapper/) | Python | MegaPose zero-shot 6D pose estimation (stub) |
-| [bundlesdf_unknown_tracker](bundlesdf_unknown_tracker/) | Python | BundleSDF neural implicit surface tracking for unknown objects (stub) |
-| [sam2_instance_segmentor](sam2_instance_segmentor/) | Python | SAM2 instance segmentation (stub) |
-| [cosypose_scene_optimizer](cosypose_scene_optimizer/) | Python | CosyPose scene-level joint pose optimization (stub) |
+| [isaac_foundationpose_tracker](packages/phase4_refinement/isaac_foundationpose_tracker/) | Python | FoundationPose zero-shot 6D pose tracker (stub) |
+| [megapose_ros2_wrapper](packages/phase4_refinement/megapose_ros2_wrapper/) | Python | MegaPose zero-shot 6D pose estimation (stub) |
+| [bundlesdf_unknown_tracker](packages/phase4_refinement/bundlesdf_unknown_tracker/) | Python | BundleSDF neural implicit surface tracking for unknown objects (stub) |
+| [sam2_instance_segmentor](packages/phase4_refinement/sam2_instance_segmentor/) | Python | SAM2 instance segmentation (stub) |
+| [cosypose_scene_optimizer](packages/phase4_refinement/cosypose_scene_optimizer/) | Python | CosyPose scene-level joint pose optimization (stub) |
 
 ### Phase 5: Grasp Planning
 
 | Package | Language | Description |
 |---------|----------|-------------|
-| [grasp_pose_planner](grasp_pose_planner/) | Python | Grasp pose action server for UR5e + 10-DoF hand (stub) |
+| [grasp_pose_planner](packages/phase5_manipulation/grasp_pose_planner/) | Python | Grasp pose action server for UR5e + 10-DoF hand (stub) |
 
 ### Infrastructure
 
 | Package | Language | Description |
 |---------|----------|-------------|
-| [perception_meta_controller](perception_meta_controller/) | C++ | Pipeline mode orchestrator (NORMAL / HIGH_PRECISION / SCENE_ANALYSIS) |
-| [perception_debug_visualizer](perception_debug_visualizer/) | C++ | Real-time OpenCV debug overlay |
-| [multi_camera_calibration](multi_camera_calibration/) | C++ / Python | Hand-eye calibration with ChArUco + optional Ceres joint optimization |
+| [perception_meta_controller](packages/infrastructure/perception_meta_controller/) | C++ | Pipeline mode orchestrator (NORMAL / HIGH_PRECISION / SCENE_ANALYSIS) |
+| [perception_debug_visualizer](packages/infrastructure/perception_debug_visualizer/) | C++ | Real-time OpenCV debug overlay |
+| [multi_camera_calibration](packages/infrastructure/multi_camera_calibration/) | C++ / Python | Hand-eye calibration with ChArUco + optional Ceres joint optimization |
 
 ## Pipeline Modes
 
@@ -134,7 +158,7 @@ RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulat
 
 1-3 cameras via config-driven topology. Single YAML defines camera count and type.
 
-- **Config**: `config/camera_config.yaml` (3-cam), `camera_config_1cam.yaml`, `camera_config_2cam.yaml`
+- **Config**: `packages/bringup/perception_bringup/config/camera_config.yaml` (3-cam), `camera_config_1cam.yaml`, `camera_config_2cam.yaml`
 - **Per-camera**: Nodes namespaced as `/cam0/`, `/cam1/`, `/cam2/`
 - **Fusion**: `cross_camera_associator` matches objects across cameras
 - **Point cloud merge**: `pcl_merge_node` merges eye-to-hand depth clouds
@@ -192,8 +216,8 @@ GPU-heavy ML 노드(FoundationPose, CosyPose, SAM2, BundleSDF)는 Docker에서 �
 ```bash
 cd ~/ros2_ws/perspective_ws/src/perspective_grasp
 
-# Build all ML images
-docker compose build
+# Build all ML images (compose lives in docker/ now)
+docker compose -f docker/docker-compose.yml build
 
 # (Optional) Model weights — 환경변수 또는 models/ 디렉토리에 배치
 export FOUNDATIONPOSE_WEIGHTS=/path/to/foundationpose/weights
@@ -240,7 +264,7 @@ cd ~/ros2_ws/perspective_ws
 source install/setup.bash
 
 # Launch full perception pipeline (YOLO tracker + pose filter + fusion + debug visualizer)
-ros2 launch yolo_pcl_cpp_tracker perception_system.launch.py
+ros2 launch perception_bringup perception_system.launch.py
 ```
 
 ### Launch by Phase
@@ -252,7 +276,7 @@ source ~/ros2_ws/perspective_ws/install/setup.bash
 ros2 launch yolo_pcl_cpp_tracker tracker.launch.py
 
 # Phase 1 (multi-camera): Full Phase 1 bringup
-ros2 launch yolo_pcl_cpp_tracker phase1_bringup.launch.py
+ros2 launch perception_bringup phase1_bringup.launch.py
 
 # Phase 2: Multi-Camera Fusion
 ros2 launch cross_camera_associator associator.launch.py
@@ -277,19 +301,19 @@ ros2 launch multi_camera_calibration calibration_collect.launch.py
 cd ~/ros2_ws/perspective_ws/src/perspective_grasp
 
 # Start individual ML service
-docker compose up foundationpose -d
-docker compose up sam2 -d
-docker compose up cosypose -d
-docker compose up bundlesdf -d
+docker compose -f docker/docker-compose.yml up foundationpose -d
+docker compose -f docker/docker-compose.yml up sam2 -d
+docker compose -f docker/docker-compose.yml up cosypose -d
+docker compose -f docker/docker-compose.yml up bundlesdf -d
 
 # Start all ML nodes
-docker compose up -d
+docker compose -f docker/docker-compose.yml up -d
 
 # View logs
-docker compose logs -f foundationpose
+docker compose -f docker/docker-compose.yml logs -f foundationpose
 
 # Stop all
-docker compose down
+docker compose -f docker/docker-compose.yml down
 ```
 
 ### Camera Configuration
@@ -297,17 +321,20 @@ docker compose down
 카메라 수에 따라 config 파일을 지정합니다.
 
 ```bash
+# Configs live in the perception_bringup share dir; resolve via ros2 pkg
+BRINGUP_CFG=$(ros2 pkg prefix perception_bringup)/share/perception_bringup/config
+
 # 1-camera setup
-ros2 launch yolo_pcl_cpp_tracker perception_system.launch.py \
-    camera_config:=config/camera_config_1cam.yaml
+ros2 launch perception_bringup perception_system.launch.py \
+    camera_config:=$BRINGUP_CFG/camera_config_1cam.yaml
 
 # 2-camera setup
-ros2 launch yolo_pcl_cpp_tracker perception_system.launch.py \
-    camera_config:=config/camera_config_2cam.yaml
+ros2 launch perception_bringup perception_system.launch.py \
+    camera_config:=$BRINGUP_CFG/camera_config_2cam.yaml
 
 # 3-camera setup (default)
-ros2 launch yolo_pcl_cpp_tracker perception_system.launch.py \
-    camera_config:=config/camera_config.yaml
+ros2 launch perception_bringup perception_system.launch.py \
+    camera_config:=$BRINGUP_CFG/camera_config.yaml
 ```
 
 ### Pipeline Modes
