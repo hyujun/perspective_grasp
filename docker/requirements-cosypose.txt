@@ -1,0 +1,50 @@
+# CosyPose + MegaPose shared Docker runtime — pinned set for reproducibility.
+# Consumed by docker/Dockerfile cosypose-runtime stage (shared between the
+# `cosypose` and `megapose` compose services — happypose bundles both).
+#
+# NOTE: happypose itself is installed as a separate RUN in the Dockerfile
+# with --no-deps because upstream pyproject extras (torchtnt / xarray /
+# scikit-learn) destabilize the resolver. See memory/happypose_install_trap.md.
+
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+# numpy 1.x ABI (cv_bridge constraint)
+numpy<2
+
+# PyTorch 2.6 + CUDA 12.6
+torch==2.6.0
+torchvision==0.21.0
+
+# happypose runtime deps (the subset actually imported on the pose-estimation path)
+trimesh==4.5.3
+opencv-python-headless==4.10.0.84
+scipy==1.14.1
+scikit-image==0.24.0
+imageio==2.36.0
+omegaconf==2.3.0
+pandas==2.2.3
+transforms3d==0.4.2
+panda3d==1.10.14
+joblib==1.4.2
+pybullet==3.2.6
+bokeh==3.6.0
+plyfile==1.1
+pybind11==2.13.6
+webdataset==0.2.100
+pypng==0.20220715.0
+addict==2.4.0
+meshcat==0.3.2
+roma==1.5.0
+torchnet==0.0.4
+seaborn==0.13.2
+
+# pinocchio Python binding (SE(3) maths; cmeel-* helpers pulled transitively)
+pin>=2.7
+simplejson
+pyyaml
+tqdm
+beautifulsoup4
+
+# PyTorch3D — source build, SHA-pinned (was @v0.7.9). v0.7.9 is the first tag
+# shipping torch 2.6 / cu126 support; upstream skipped v0.7.8.
+pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@33824be3cbc87a7dd1db0f6a9a9de9ac81b2d0ba

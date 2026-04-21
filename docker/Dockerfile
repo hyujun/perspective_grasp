@@ -101,7 +101,10 @@ CMD ["bash"]
 # ---------------------------------------------------------------------------
 FROM ml-base AS foundationpose-runtime
 
-# numpy<2 first (see SAM2 stage — same cv_bridge ABI constraint).
+# Shadow apt numpy with a pip-managed 1.x install. cv_bridge in ros-jazzy is
+# compiled against the NumPy 1.x C ABI; installing this first with
+# --ignore-installed guarantees the pip-managed numpy takes precedence on
+# sys.path even after later transitive deps see numpy<2 as "already satisfied".
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
         "numpy<2"
 
@@ -112,32 +115,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch with CUDA 12.6. Pinned to versions known to work with
-# kaolin 0.17 / nvdiffrast 0.3.x as of 2026-04.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        --index-url https://download.pytorch.org/whl/cu126 \
-        torch==2.6.0 torchvision==0.21.0
+# Pinned Python runtime — single resolution pass for determinism.
+COPY docker/requirements-foundationpose.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
-# Mesh / rendering utilities FoundationPose pulls in at runtime.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        trimesh==4.5.3 pyrender==0.1.45 open3d==0.18.0 \
-        opencv-python-headless==4.10.0.84 \
-        scipy==1.14.1 scikit-image==0.24.0 \
-        imageio==2.36.0 omegaconf==2.3.0 \
-        ruamel.yaml==0.18.6 joblib==1.4.2
-
-# nvdiffrast + kaolin — compile against the torch we just installed.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        git+https://github.com/NVlabs/nvdiffrast.git@v0.3.3
-RUN pip3 install --no-cache-dir --break-system-packages \
-        kaolin==0.17.0 \
-        -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.6.0_cu126.html
-
-# FoundationPose sources — cloned once, put on PYTHONPATH. Weights are
+# FoundationPose sources — SHA-pinned clone (was @main). Weights are
 # volume-mounted at runtime (see docker-compose FOUNDATIONPOSE_WEIGHTS).
-RUN git clone --depth 1 https://github.com/NVlabs/FoundationPose.git \
-        /opt/FoundationPose
+RUN git clone https://github.com/NVlabs/FoundationPose.git /opt/FoundationPose \
+    && git -C /opt/FoundationPose checkout e3d597b8c6b851d053094ebd6fa240191c5238f8
 ENV PYTHONPATH=/opt/FoundationPose:${PYTHONPATH}
+
+# Bake the ROS 2 node source + compile it into /ws/install so `ros2 launch`
+# works immediately on container start. For dev iteration without rebuilding
+# the image, use docker/docker-compose.dev.yml which re-mounts the source and
+# re-runs colcon build on container start.
+COPY packages/phase4_refinement/isaac_foundationpose_tracker /ws/src/isaac_foundationpose_tracker
+RUN source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash \
+    && cd /ws && colcon build --packages-select isaac_foundationpose_tracker
 
 WORKDIR /ws
 CMD ["bash"]
@@ -161,7 +156,9 @@ CMD ["bash"]
 # ---------------------------------------------------------------------------
 FROM ml-base AS cosypose-runtime
 
-# numpy<2 first (cv_bridge ABI — same constraint as foundationpose/sam2).
+# Shadow apt numpy with a pip-managed 1.x install. cv_bridge in ros-jazzy is
+# compiled against the NumPy 1.x C ABI; transitive deps (scikit-image /
+# pandas / seaborn) otherwise pull numpy 2.x and break cv2 at import time.
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
         "numpy<2"
 
@@ -172,85 +169,58 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libassimp-dev ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch 2.6 + CUDA 12.6 — same pin the other Phase 4 stages use.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        --index-url https://download.pytorch.org/whl/cu126 \
-        torch==2.6.0 torchvision==0.21.0
+# Pinned Python runtime — single resolution pass for determinism. Excludes
+# happypose itself (installed --no-deps below, see next block).
+COPY docker/requirements-cosypose.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
-# happypose runtime deps pulled ahead of happypose itself so source
-# builds (pytorch3d) see the right numeric stack. pybind11 is a build-
-# time dep for cosypose's C++ extension (cosypose_cext). `"numpy<2"`
-# is re-asserted here because scikit-image / pandas / seaborn pull
-# numpy 2.x through transitive resolution otherwise, which breaks
-# cv_bridge at runtime (NumPy 1.x C ABI).
-RUN pip3 install --no-cache-dir --break-system-packages \
-        "numpy<2" \
-        trimesh==4.5.3 \
-        opencv-python-headless==4.10.0.84 \
-        scipy==1.14.1 scikit-image==0.24.0 \
-        imageio==2.36.0 omegaconf==2.3.0 \
-        pandas==2.2.3 transforms3d==0.4.2 \
-        panda3d==1.10.14 joblib==1.4.2 \
-        pybullet==3.2.6 bokeh==3.6.0 plyfile==1.1 \
-        pybind11==2.13.6 webdataset==0.2.100 \
-        pypng==0.20220715.0 addict==2.4.0 meshcat==0.3.2 \
-        roma==1.5.0 torchnet==0.0.4 seaborn==0.13.2
-
-# PyTorch3D — source install against the torch above. Upstream skipped
-# v0.7.8; v0.7.9 is the first tag shipping torch 2.6 / cu126 support.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.9"
-
-# happypose: clone the full repo (with submodules) instead of relying
-# on `pip install git+URL` alone. The upstream pyproject uses uv's
-# workspace model, so pip-via-git pulls only the outer shell — the
-# real CosyPose + MegaPose code under happypose/pose_estimators/**
-# gets skipped. We do BOTH:
-#   1. `pip install --no-deps git+URL` so `importlib.metadata.metadata
-#      ("happypose")` resolves (happypose/__init__.py reads version +
-#      author from dist-info at import time; without the dist-info
-#      every `import happypose.*` raises PackageNotFoundError).
-#   2. clone the tree with submodules into /opt/happypose so the real
-#      modules are available on disk.
-#   3. install the cosypose subproject (has pybind11 C++ ext and sets
-#      up the top-level `cosypose` namespace the backend uses).
-#   4. add /opt/happypose to PYTHONPATH so happypose.* resolves to
-#      the full source tree instead of the pip-installed shell.
+# happypose: clone the full repo (with submodules disabled) instead of
+# relying on `pip install git+URL` alone. The upstream pyproject uses uv's
+# workspace model, so pip-via-git pulls only the outer shell — the real
+# CosyPose + MegaPose code under happypose/pose_estimators/** gets skipped.
+# We do BOTH:
+#   1. `pip install --no-deps git+URL@<SHA>` so `importlib.metadata.metadata
+#      ("happypose")` resolves (happypose/__init__.py reads version + author
+#      from dist-info at import time; without the dist-info every
+#      `import happypose.*` raises PackageNotFoundError).
+#   2. clone the tree into /opt/happypose so the real modules are on disk.
+#   3. install the cosypose subproject (pybind11 C++ ext, sets up the
+#      top-level `cosypose` namespace the backend uses).
+#   4. add /opt/happypose to PYTHONPATH so happypose.* resolves to the
+#      full source tree instead of the pip-installed shell.
 # See memory/happypose_install_trap.md for the debugging trail.
+# SHA-pinned (was @main, upstream last touched 2023-09).
+# torchtnt / xarray / scikit-learn are pyproject-declared but unused by the
+# CosyPose + MegaPose modules; --no-deps keeps the resolver in a pinned corner.
 RUN pip3 install --no-cache-dir --break-system-packages --no-deps \
-        "git+https://github.com/agimus-project/happypose.git@main"
+        "git+https://github.com/agimus-project/happypose.git@2f3d2ebbf17d20157a5a3f7821f62876bf594b03"
 
-# Runtime deps happypose declares but `--no-deps` skipped above. pin
-# is pinocchio's python binding (SE(3) maths); the cmeel-* helpers
-# get pulled in transitively. Only deps happypose actually imports
-# on the pose-estimation path go here — `torchtnt`, `xarray`,
-# `scikit-learn` are pyproject-declared but unused by the CosyPose +
-# MegaPose modules, and adding them destabilises the resolver (e.g.
-# old-xarray → pandas<2 source build with missing pkg_resources).
-# Add entries below only when a concrete import-time failure demands
-# them, so the resolver stays in a pinned corner.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        "numpy<2" \
-        "pin>=2.7" simplejson pyyaml tqdm beautifulsoup4
+# No `--recurse-submodules`: happypose's `.gitmodules` references paths
+# (`cosypose/deps/*`) that no longer exist in the repo, so the flag just
+# wastes time probing 404s. The bits happypose actually uses at runtime
+# live in `happypose/pose_estimators/**`, which is regular source.
+RUN git clone https://github.com/agimus-project/happypose.git /opt/happypose \
+    && git -C /opt/happypose checkout 2f3d2ebbf17d20157a5a3f7821f62876bf594b03
 
-# No `--recurse-submodules`: happypose's `.gitmodules` references
-# paths (`cosypose/deps/*`) that no longer exist in the repo, so the
-# flag just wastes time probing 404s. The bits happypose actually
-# uses at runtime live in `happypose/pose_estimators/**`, which is
-# regular source.
-RUN git clone --depth 1 \
-        https://github.com/agimus-project/happypose.git /opt/happypose
-
-# cosypose subproject: has pybind11 C++ ext (cosypose_cext) and sets
-# up the top-level `cosypose` namespace.
+# cosypose subproject: has pybind11 C++ ext (cosypose_cext) and sets up the
+# top-level `cosypose` namespace.
 RUN cd /opt/happypose/happypose/pose_estimators/cosypose \
     && pip3 install --no-cache-dir --break-system-packages --no-deps -e .
 
 ENV PYTHONPATH=/opt/happypose:${PYTHONPATH}
 
-# happypose drives its data-tree discovery off this env var; node
-# params (`dataset_dir`) override it per-invocation when set.
+# happypose drives its data-tree discovery off this env var; node params
+# (`dataset_dir`) override it per-invocation when set.
 ENV HAPPYPOSE_DATA_DIR=/ws/models/happypose
+
+# Bake BOTH ROS 2 node sources (cosypose_scene_optimizer + megapose_ros2_wrapper)
+# into /ws/install — this single stage serves the `cosypose` and `megapose`
+# compose services, and either launch target must work without a runtime build.
+COPY packages/phase4_refinement/cosypose_scene_optimizer /ws/src/cosypose_scene_optimizer
+COPY packages/phase4_refinement/megapose_ros2_wrapper /ws/src/megapose_ros2_wrapper
+RUN source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash \
+    && cd /ws && colcon build --packages-select cosypose_scene_optimizer megapose_ros2_wrapper
 
 WORKDIR /ws
 CMD ["bash"]
@@ -287,7 +257,7 @@ CMD ["bash"]
 # ---------------------------------------------------------------------------
 FROM ml-base AS bundlesdf-runtime
 
-# numpy<2 first (cv_bridge ABI — same constraint as the other stages).
+# Shadow apt numpy with a pip-managed 1.x install (cv_bridge ABI).
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
         "numpy<2"
 
@@ -299,43 +269,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch 2.6 + CUDA 12.6 — same pin as the other Phase 4 stages.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        --index-url https://download.pytorch.org/whl/cu126 \
-        torch==2.6.0 torchvision==0.21.0
+# Pinned Python runtime — single resolution pass for determinism.
+COPY docker/requirements-bundlesdf.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
-# Runtime utilities BundleSDF imports directly. numpy<2 re-asserted
-# because scikit-image / open3d transitive deps otherwise upgrade it.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        "numpy<2" \
-        trimesh==4.5.3 pyrender==0.1.45 open3d==0.18.0 \
-        opencv-python-headless==4.10.0.84 \
-        scipy==1.14.1 scikit-image==0.24.0 \
-        imageio==2.36.0 omegaconf==2.3.0 \
-        ruamel.yaml==0.18.6 joblib==1.4.2 \
-        kornia==0.7.4 \
-        transformations==2024.6.1 einops==0.8.0 \
-        plyfile==1.1 pybind11==2.13.6
-
-# nvdiffrast + kaolin — compile against the torch we just installed.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        git+https://github.com/NVlabs/nvdiffrast.git@v0.3.3
-RUN pip3 install --no-cache-dir --break-system-packages \
-        kaolin==0.17.0 \
-        -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.6.0_cu126.html
-
-# PyTorch3D — source install against the torch above (same pin as
-# cosypose-runtime).
-RUN pip3 install --no-cache-dir --break-system-packages \
-        "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.9"
-
-# BundleSDF sources — cloned once, put on PYTHONPATH. Weights are
-# volume-mounted at runtime (see docker-compose BUNDLESDF_WEIGHTS).
-# --recurse-submodules skipped: BundleSDF's .gitmodules points at
-# external repos that may 404 (same trap as happypose).
-RUN git clone --depth 1 https://github.com/NVlabs/BundleSDF.git \
-        /opt/BundleSDF
+# BundleSDF sources — SHA-pinned clone. Weights are volume-mounted at
+# runtime (see docker-compose BUNDLESDF_WEIGHTS). No --recurse-submodules:
+# BundleSDF's .gitmodules points at external repos that may 404 (same trap
+# as happypose).
+RUN git clone https://github.com/NVlabs/BundleSDF.git /opt/BundleSDF \
+    && git -C /opt/BundleSDF checkout ffa67d425240b5b76d2e387a7dd3d3735a7cf1a1
 ENV PYTHONPATH=/opt/BundleSDF:${PYTHONPATH}
+
+# Bake the ROS 2 node source + compile it into /ws/install. See
+# docker/docker-compose.dev.yml for the dev bind-mount workflow.
+COPY packages/phase4_refinement/bundlesdf_unknown_tracker /ws/src/bundlesdf_unknown_tracker
+RUN source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash \
+    && cd /ws && colcon build --packages-select bundlesdf_unknown_tracker
 
 WORKDIR /ws
 CMD ["bash"]
@@ -356,14 +307,17 @@ FROM ml-base AS sam2-runtime
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
         "numpy<2"
 
-# PyTorch with CUDA 12.6 runtime. Versions pinned for reproducibility.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        --index-url https://download.pytorch.org/whl/cu126 \
-        torch==2.6.0 torchvision==0.21.0
+# Pinned Python runtime — single resolution pass for determinism. Pulls
+# torch 2.6 + cu126 and SAM2 @ SHA (was @main, upstream last touched 2024-12).
+COPY docker/requirements-sam2.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
-# Meta's SAM2 (segment-anything-2). Installs hydra-core + iopath as deps.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        "git+https://github.com/facebookresearch/sam2.git@main"
+# Bake the ROS 2 node source + compile it into /ws/install. See
+# docker/docker-compose.dev.yml for the dev bind-mount workflow.
+COPY packages/phase4_refinement/sam2_instance_segmentor /ws/src/sam2_instance_segmentor
+RUN source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash \
+    && cd /ws && colcon build --packages-select sam2_instance_segmentor
 
 WORKDIR /ws
 CMD ["bash"]

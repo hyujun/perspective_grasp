@@ -1,0 +1,41 @@
+# BundleSDF Docker runtime — pinned set for reproducibility.
+# Consumed by docker/Dockerfile bundlesdf-runtime stage.
+#
+# NOTE: BundleSDF itself is cloned (not pip-installed) in the Dockerfile
+# because it ships only a source tree + BundleTrack native extension.
+
+--extra-index-url https://download.pytorch.org/whl/cu126
+--find-links https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.6.0_cu126.html
+
+# numpy 1.x ABI (cv_bridge constraint)
+numpy<2
+
+# PyTorch 2.6 + CUDA 12.6
+torch==2.6.0
+torchvision==0.21.0
+
+# Runtime utilities BundleSDF imports directly
+trimesh==4.5.3
+pyrender==0.1.45
+open3d==0.18.0
+opencv-python-headless==4.10.0.84
+scipy==1.14.1
+scikit-image==0.24.0
+imageio==2.36.0
+omegaconf==2.3.0
+ruamel.yaml==0.18.6
+joblib==1.4.2
+kornia==0.7.4
+transformations==2024.6.1
+einops==0.8.0
+plyfile==1.1
+pybind11==2.13.6
+
+# Differentiable rasterizer — SHA-pinned (was @v0.3.3)
+nvdiffrast @ git+https://github.com/NVlabs/nvdiffrast.git@729261dc64c4241ea36efda84fbf532cc8b425b8
+
+# NVIDIA kaolin (mesh + SDF helpers)
+kaolin==0.17.0
+
+# PyTorch3D — SHA-pinned (was @v0.7.9, source-build against torch 2.6/cu126)
+pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@33824be3cbc87a7dd1db0f6a9a9de9ac81b2d0ba

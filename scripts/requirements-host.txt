@@ -1,0 +1,11 @@
+# perspective_grasp host Python deps
+#
+# Installed into the workspace venv (<ws>/.venv) by install_host.sh /
+# install_dependencies.sh. The venv uses --system-site-packages so apt's
+# rclpy / cv_bridge / numpy stay visible — these pins layer on top.
+#
+# numpy<2 is load-bearing: cv_bridge in ros-jazzy is compiled against the
+# NumPy 1.x C ABI, and ultralytics transitively pulls numpy.
+
+numpy<2
+ultralytics==8.4.40

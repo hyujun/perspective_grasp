@@ -4,26 +4,38 @@
 # Host runs: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO
 # Docker runs: GPU-heavy Python ML nodes with complex dependencies
 #
-# Usage (from repo root):
+# Production usage (ROS 2 node source is baked into the image, no runtime
+# colcon build — container starts and immediately launches):
 #   docker compose -f docker/docker-compose.yml build
 #   docker compose -f docker/docker-compose.yml up foundationpose -d
 #   docker compose -f docker/docker-compose.yml logs -f foundationpose
 #   docker compose -f docker/docker-compose.yml down
 #
-# Or from this directory:
-#   cd docker && docker compose build
+# Development usage (bind-mounts packages/phase4_refinement/<pkg> and re-runs
+# colcon build on container start so local edits are picked up without an
+# image rebuild — see docker/docker-compose.dev.yml):
+#   docker compose -f docker/docker-compose.yml \
+#                  -f docker/docker-compose.dev.yml up foundationpose
 #
 # Model weights:
 #   Set env vars or place weights in <repo_root>/models/<service>/
 #   e.g., export FOUNDATIONPOSE_WEIGHTS=/path/to/weights
 # =============================================================================
 
+# Image tag policy (B5):
+#   REGISTRY   defaults to `perspective_grasp` (local-only namespace; no push).
+#              Override to a real registry host/org, e.g.:
+#                export REGISTRY=ghcr.io/myorg/perspective_grasp
+#   IMAGE_TAG  defaults to `latest`. Override to pin a specific build, e.g.:
+#                export IMAGE_TAG=2026-04-21-a8f21f2
+#              See docker/tag.sh for a helper that generates + applies both
+#              `:latest` and `:<date>-<git-sha>` tags in one pass.
 x-gpu-common: &gpu-common
   build:
     context: ..
     dockerfile: docker/Dockerfile
     target: ml-base
-  image: perspective_grasp/ml-base:latest
+  image: ${REGISTRY:-perspective_grasp}/ml-base:${IMAGE_TAG:-latest}
   network_mode: host
   ipc: host
   restart: unless-stopped
@@ -59,16 +71,14 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: foundationpose-runtime
-    image: perspective_grasp/foundationpose:latest
+    image: ${REGISTRY:-perspective_grasp}/foundationpose:${IMAGE_TAG:-latest}
     container_name: pg_foundationpose
     volumes:
-      - ../packages/phase4_refinement/isaac_foundationpose_tracker:/ws/src/isaac_foundationpose_tracker
       - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${FOUNDATIONPOSE_WEIGHTS:-../models/foundationpose}:/ws/models/foundationpose
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
-        cd /ws && colcon build --packages-select isaac_foundationpose_tracker &&
         source /ws/install/setup.bash &&
         echo '[FoundationPose] Container ready.' &&
         ros2 launch isaac_foundationpose_tracker foundationpose.launch.py ${FOUNDATIONPOSE_CAMERA_CONFIG:+camera_config:=$FOUNDATIONPOSE_CAMERA_CONFIG}
@@ -98,17 +108,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: cosypose-runtime
-    image: perspective_grasp/cosypose:latest
+    image: ${REGISTRY:-perspective_grasp}/cosypose:${IMAGE_TAG:-latest}
     container_name: pg_cosypose
     volumes:
-      - ../packages/phase4_refinement/cosypose_scene_optimizer:/ws/src/cosypose_scene_optimizer
       - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${HAPPYPOSE_WEIGHTS:-../models/happypose}:/ws/models/happypose
       - ${MEGAPOSE_MESHES:-../models/megapose/meshes}:/ws/models/megapose/meshes
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
-        cd /ws && colcon build --packages-select cosypose_scene_optimizer &&
         source /ws/install/setup.bash &&
         echo '[CosyPose] Container ready.' &&
         ros2 launch cosypose_scene_optimizer cosypose.launch.py ${COSYPOSE_CAMERA_CONFIG:+camera_config:=$COSYPOSE_CAMERA_CONFIG}
@@ -130,17 +138,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: cosypose-runtime
-    image: perspective_grasp/cosypose:latest
+    image: ${REGISTRY:-perspective_grasp}/cosypose:${IMAGE_TAG:-latest}
     container_name: pg_megapose
     volumes:
-      - ../packages/phase4_refinement/megapose_ros2_wrapper:/ws/src/megapose_ros2_wrapper
       - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${HAPPYPOSE_WEIGHTS:-../models/happypose}:/ws/models/happypose
       - ${MEGAPOSE_MESHES:-../models/megapose/meshes}:/ws/models/megapose/meshes
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
-        cd /ws && colcon build --packages-select megapose_ros2_wrapper &&
         source /ws/install/setup.bash &&
         echo '[MegaPose] Container ready.' &&
         ros2 launch megapose_ros2_wrapper megapose.launch.py ${MEGAPOSE_CAMERA_CONFIG:+camera_config:=$MEGAPOSE_CAMERA_CONFIG}
@@ -157,10 +163,9 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: sam2-runtime
-    image: perspective_grasp/sam2:latest
+    image: ${REGISTRY:-perspective_grasp}/sam2:${IMAGE_TAG:-latest}
     container_name: pg_sam2
     volumes:
-      - ../packages/phase4_refinement/sam2_instance_segmentor:/ws/src/sam2_instance_segmentor
       - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${SAM2_WEIGHTS:-../models/sam2}:/ws/models/sam2
     # SAM2_CAMERA_CONFIG selects the camera topology:
@@ -171,7 +176,6 @@ services:
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
-        cd /ws && colcon build --packages-select sam2_instance_segmentor &&
         source /ws/install/setup.bash &&
         echo '[SAM2] Container ready.' &&
         ros2 launch sam2_instance_segmentor sam2_segmentor.launch.py ${SAM2_CAMERA_CONFIG:+camera_config:=$SAM2_CAMERA_CONFIG}
@@ -198,16 +202,14 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: bundlesdf-runtime
-    image: perspective_grasp/bundlesdf:latest
+    image: ${REGISTRY:-perspective_grasp}/bundlesdf:${IMAGE_TAG:-latest}
     container_name: pg_bundlesdf
     volumes:
-      - ../packages/phase4_refinement/bundlesdf_unknown_tracker:/ws/src/bundlesdf_unknown_tracker
       - ../packages/bringup/perception_bringup/config:/ws/config:ro
       - ${BUNDLESDF_WEIGHTS:-../models/bundlesdf}:/ws/models/bundlesdf
     command: >
       bash -c "
         source /opt/ros/jazzy/setup.bash &&
-        cd /ws && colcon build --packages-select bundlesdf_unknown_tracker &&
         source /ws/install/setup.bash &&
         echo '[BundleSDF] Container ready.' &&
         ros2 launch bundlesdf_unknown_tracker bundlesdf.launch.py ${BUNDLESDF_CAMERA_CONFIG:+camera_config:=$BUNDLESDF_CAMERA_CONFIG}

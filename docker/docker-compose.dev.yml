@@ -1,0 +1,80 @@
+# =============================================================================
+# perspective_grasp - Docker Compose dev override
+#
+# Layers on top of docker-compose.yml to restore the pre-B4 dev workflow:
+#   - bind-mount the ROS 2 node source from packages/phase4_refinement/<pkg>
+#     so local edits are picked up without rebuilding the image
+#   - re-run `colcon build --packages-select <pkg>` on container start so the
+#     install tree in /ws/install reflects the mounted source
+#
+# Compose merges `volumes:` (union by unique entries) so the base
+# `config:/ws/config:ro` + `${*_WEIGHTS}:/ws/models/<svc>` mounts are preserved;
+# this file only ADDs the source mount. The `command:` key is replaced
+# outright (single-value), so each service restates its full launch command
+# with the on-start `colcon build` step restored.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml \
+#                  -f docker/docker-compose.dev.yml up foundationpose
+# =============================================================================
+
+services:
+  foundationpose:
+    volumes:
+      - ../packages/phase4_refinement/isaac_foundationpose_tracker:/ws/src/isaac_foundationpose_tracker
+    command: >
+      bash -c "
+        source /opt/ros/jazzy/setup.bash &&
+        cd /ws && colcon build --packages-select isaac_foundationpose_tracker &&
+        source /ws/install/setup.bash &&
+        echo '[FoundationPose/dev] Source rebuilt from bind mount.' &&
+        ros2 launch isaac_foundationpose_tracker foundationpose.launch.py ${FOUNDATIONPOSE_CAMERA_CONFIG:+camera_config:=$FOUNDATIONPOSE_CAMERA_CONFIG}
+      "
+
+  cosypose:
+    volumes:
+      - ../packages/phase4_refinement/cosypose_scene_optimizer:/ws/src/cosypose_scene_optimizer
+    command: >
+      bash -c "
+        source /opt/ros/jazzy/setup.bash &&
+        cd /ws && colcon build --packages-select cosypose_scene_optimizer &&
+        source /ws/install/setup.bash &&
+        echo '[CosyPose/dev] Source rebuilt from bind mount.' &&
+        ros2 launch cosypose_scene_optimizer cosypose.launch.py ${COSYPOSE_CAMERA_CONFIG:+camera_config:=$COSYPOSE_CAMERA_CONFIG}
+      "
+
+  megapose:
+    volumes:
+      - ../packages/phase4_refinement/megapose_ros2_wrapper:/ws/src/megapose_ros2_wrapper
+    command: >
+      bash -c "
+        source /opt/ros/jazzy/setup.bash &&
+        cd /ws && colcon build --packages-select megapose_ros2_wrapper &&
+        source /ws/install/setup.bash &&
+        echo '[MegaPose/dev] Source rebuilt from bind mount.' &&
+        ros2 launch megapose_ros2_wrapper megapose.launch.py ${MEGAPOSE_CAMERA_CONFIG:+camera_config:=$MEGAPOSE_CAMERA_CONFIG}
+      "
+
+  sam2:
+    volumes:
+      - ../packages/phase4_refinement/sam2_instance_segmentor:/ws/src/sam2_instance_segmentor
+    command: >
+      bash -c "
+        source /opt/ros/jazzy/setup.bash &&
+        cd /ws && colcon build --packages-select sam2_instance_segmentor &&
+        source /ws/install/setup.bash &&
+        echo '[SAM2/dev] Source rebuilt from bind mount.' &&
+        ros2 launch sam2_instance_segmentor sam2_segmentor.launch.py ${SAM2_CAMERA_CONFIG:+camera_config:=$SAM2_CAMERA_CONFIG}
+      "
+
+  bundlesdf:
+    volumes:
+      - ../packages/phase4_refinement/bundlesdf_unknown_tracker:/ws/src/bundlesdf_unknown_tracker
+    command: >
+      bash -c "
+        source /opt/ros/jazzy/setup.bash &&
+        cd /ws && colcon build --packages-select bundlesdf_unknown_tracker &&
+        source /ws/install/setup.bash &&
+        echo '[BundleSDF/dev] Source rebuilt from bind mount.' &&
+        ros2 launch bundlesdf_unknown_tracker bundlesdf.launch.py ${BUNDLESDF_CAMERA_CONFIG:+camera_config:=$BUNDLESDF_CAMERA_CONFIG}
+      "
