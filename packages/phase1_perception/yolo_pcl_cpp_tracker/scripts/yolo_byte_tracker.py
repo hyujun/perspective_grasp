@@ -5,6 +5,9 @@ Subscribes to camera images, runs YOLOv8/v11 detection with ByteTrack
 multi-object tracking, and publishes DetectionArray with persistent track IDs.
 """
 
+import os
+from pathlib import Path
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
@@ -27,6 +30,7 @@ class YoloByteTrackerNode(Node):
 
         # Parameters
         self.declare_parameter('model_path', 'yolov8n.pt')
+        self.declare_parameter('models_dir', '')
         self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('device', '0')  # GPU device ID
         self.declare_parameter('image_topic', '/camera/color/image_raw')
@@ -35,6 +39,7 @@ class YoloByteTrackerNode(Node):
         self.declare_parameter('match_thresh', 0.8)
 
         model_path = self.get_parameter('model_path').value
+        models_dir = self.get_parameter('models_dir').value
         self.conf_thresh = self.get_parameter('confidence_threshold').value
         self.device = self.get_parameter('device').value
         image_topic = self.get_parameter('image_topic').value
@@ -44,8 +49,9 @@ class YoloByteTrackerNode(Node):
 
         # Load YOLO model
         if HAS_ULTRALYTICS:
-            self.get_logger().info(f'Loading YOLO model: {model_path}')
-            self.model = YOLO(model_path)
+            model_arg = self._resolve_model_location(model_path, models_dir)
+            self.get_logger().info(f'Loading YOLO model: {model_arg}')
+            self.model = YOLO(model_arg)
             self.get_logger().info('YOLO model loaded successfully')
         else:
             self.get_logger().error(
@@ -69,6 +75,20 @@ class YoloByteTrackerNode(Node):
 
         self.get_logger().info(
             f'YoloByteTracker ready. Subscribing to {image_topic}')
+
+    def _resolve_model_location(self, model_path: str, models_dir: str) -> str:
+        # Ultralytics downloads bare filenames to CWD. Redirect that to models_dir
+        # by chdir-ing there before YOLO() loads. If the weight already exists in
+        # models_dir, pass the absolute path directly.
+        if not models_dir or os.path.isabs(model_path):
+            return model_path
+        models_dir_p = Path(models_dir).expanduser()
+        models_dir_p.mkdir(parents=True, exist_ok=True)
+        resolved = models_dir_p / model_path
+        if resolved.exists():
+            return str(resolved)
+        os.chdir(models_dir_p)
+        return model_path
 
     def image_callback(self, msg: Image):
         """Process incoming image: run YOLO + ByteTrack, publish detections."""
