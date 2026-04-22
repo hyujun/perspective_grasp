@@ -22,7 +22,7 @@ venv/
 *.engine
 *.trt
 *.pth
-models/weights/
+models/
 
 # IDE
 .vscode/
