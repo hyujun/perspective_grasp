@@ -101,12 +101,16 @@ CMD ["bash"]
 # ---------------------------------------------------------------------------
 FROM ml-base AS foundationpose-runtime
 
-# Shadow apt numpy with a pip-managed 1.x install. cv_bridge in ros-jazzy is
-# compiled against the NumPy 1.x C ABI; installing this first with
-# --ignore-installed guarantees the pip-managed numpy takes precedence on
-# sys.path even after later transitive deps see numpy<2 as "already satisfied".
+# Shadow two debian-owned Python packages with pip-managed copies in
+# /usr/local so the main `pip install -r requirements.txt` below never
+# has to uninstall them (debian installs lack pip RECORD files, so pip
+# errors with `Cannot uninstall X, RECORD file not found`).
+#   * numpy<2: cv_bridge in ros-jazzy is compiled against the NumPy 1.x
+#     C ABI. Letting transitive deps pull numpy 2.x breaks cv2 at import.
+#   * blinker>=1.9: open3d 0.19.0 → flask 3.x → blinker>=1.9, but
+#     python3-blinker 1.7 is pre-installed by ros-jazzy-ros-base.
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
-        "numpy<2"
+        "numpy<2" "blinker>=1.9"
 
 # Native deps for kaolin / nvdiffrast / open3d / pyrender.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -170,10 +174,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned Python runtime — single resolution pass for determinism. Excludes
-# happypose itself (installed --no-deps below, see next block).
+# happypose itself (installed --no-deps below, see next block) and
+# pytorch3d (separate --no-build-isolation RUN below; its setup.py does
+# `import torch` at metadata time, which breaks pip's isolated build env).
 COPY docker/requirements-cosypose.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
+
+# PyTorch3D — SHA-pinned source build (was @v0.7.9, first tag with torch
+# 2.6 / cu126 support). --no-build-isolation so setup.py sees the torch
+# pinned in the previous RUN; default build isolation spawns a fresh
+# venv without torch and the install fails.
+RUN pip3 install --no-cache-dir --break-system-packages --no-build-isolation \
+        "pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@33824be3cbc87a7dd1db0f6a9a9de9ac81b2d0ba"
 
 # happypose: clone the full repo (with submodules disabled) instead of
 # relying on `pip install git+URL` alone. The upstream pyproject uses uv's
@@ -257,9 +270,14 @@ CMD ["bash"]
 # ---------------------------------------------------------------------------
 FROM ml-base AS bundlesdf-runtime
 
-# Shadow apt numpy with a pip-managed 1.x install (cv_bridge ABI).
+# Shadow two debian-owned Python packages with pip-managed copies in
+# /usr/local (debian installs lack pip RECORD files — pip errors with
+# `Cannot uninstall X, RECORD file not found` if it tries to upgrade).
+#   * numpy<2: cv_bridge NumPy 1.x ABI.
+#   * blinker>=1.9: open3d 0.19.0 → flask 3.x → blinker>=1.9, vs the
+#     python3-blinker 1.7 that ros-jazzy-ros-base drops in.
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
-        "numpy<2"
+        "numpy<2" "blinker>=1.9"
 
 # Native deps: kaolin / nvdiffrast / open3d / pyrender / BundleSDF C++ ext.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -269,10 +287,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned Python runtime — single resolution pass for determinism.
+# Pinned Python runtime — single resolution pass for determinism. Excludes
+# pytorch3d (separate --no-build-isolation RUN below; its setup.py does
+# `import torch` at metadata time, which breaks pip's isolated build env).
 COPY docker/requirements-bundlesdf.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
+
+# PyTorch3D — SHA-pinned source build (was @v0.7.9, first tag with torch
+# 2.6 / cu126 support). --no-build-isolation so setup.py sees the torch
+# pinned in the previous RUN; default build isolation spawns a fresh
+# venv without torch and the install fails.
+RUN pip3 install --no-cache-dir --break-system-packages --no-build-isolation \
+        "pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@33824be3cbc87a7dd1db0f6a9a9de9ac81b2d0ba"
 
 # BundleSDF sources — SHA-pinned clone. Weights are volume-mounted at
 # runtime (see docker-compose BUNDLESDF_WEIGHTS). No --recurse-submodules:

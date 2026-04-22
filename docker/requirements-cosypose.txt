@@ -45,6 +45,8 @@ pyyaml
 tqdm
 beautifulsoup4
 
-# PyTorch3D — source build, SHA-pinned (was @v0.7.9). v0.7.9 is the first tag
-# shipping torch 2.6 / cu126 support; upstream skipped v0.7.8.
-pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@33824be3cbc87a7dd1db0f6a9a9de9ac81b2d0ba
+# NOTE: pytorch3d is installed in a separate Dockerfile RUN with
+# --no-build-isolation, because its setup.py does `import torch` at
+# metadata-collection time — which fails in pip's default isolated
+# build env even when torch is pinned in this same file. See the
+# cosypose-runtime stage in docker/Dockerfile.
