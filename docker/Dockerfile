@@ -243,11 +243,18 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 RUN git clone https://github.com/agimus-project/happypose.git /opt/happypose \
     && git -C /opt/happypose checkout 2f3d2ebbf17d20157a5a3f7821f62876bf594b03
 
-# cosypose subproject: has pybind11 C++ ext (cosypose_cext) and sets up the
-# top-level `cosypose` namespace.
+# cosypose subproject: has a C++ ext (cosypose_cext) and sets up the
+# top-level `cosypose` namespace. The real project sits at the repo root
+# (`/opt/happypose/cosypose/setup.py`); the `happypose/pose_estimators/
+# cosypose/` path under the inner package is only a docstring stub
+# (`__init__.py` + `placeholder.py`) at this pinned SHA.
+# --no-build-isolation because setup.py does `from torch.utils.cpp_extension
+# import BuildExtension, CppExtension` at module top — pip's default
+# isolated build env has no torch and fails at metadata collection (same
+# trap as pytorch3d).
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    cd /opt/happypose/happypose/pose_estimators/cosypose \
-    && pip3 install --break-system-packages --no-deps -e .
+    cd /opt/happypose/cosypose \
+    && pip3 install --break-system-packages --no-deps --no-build-isolation -e .
 
 ENV PYTHONPATH=/opt/happypose:${PYTHONPATH}
 
