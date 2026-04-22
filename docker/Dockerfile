@@ -248,13 +248,21 @@ RUN git clone https://github.com/agimus-project/happypose.git /opt/happypose \
 # (`/opt/happypose/cosypose/setup.py`); the `happypose/pose_estimators/
 # cosypose/` path under the inner package is only a docstring stub
 # (`__init__.py` + `placeholder.py`) at this pinned SHA.
-# --no-build-isolation because setup.py does `from torch.utils.cpp_extension
-# import BuildExtension, CppExtension` at module top — pip's default
-# isolated build env has no torch and fails at metadata collection (same
-# trap as pytorch3d).
+#
+# Two env-var gotchas the cosypose setup.py inherits from its conda-centric
+# upstream:
+#   * Line 10 does `os.environ['CXX'] = os.environ.get('GXX', '')`, which
+#     clobbers CXX to empty when GXX is unset (the conda `compilers` pkg
+#     sets GXX; plain Docker does not). An empty CXX makes distutils build
+#     a compiler with empty `compiler_cxx`, and torch cpp_extension's
+#     `_check_abi` then fails with `IndexError: list index out of range`.
+#     Export GXX=g++ (and CXX=g++ defensively) so both paths resolve.
+#   * --no-build-isolation because setup.py does `from torch.utils.
+#     cpp_extension import CppExtension` at module top — pip's default
+#     isolated build env has no torch (same trap as pytorch3d).
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     cd /opt/happypose/cosypose \
-    && pip3 install --break-system-packages --no-deps --no-build-isolation -e .
+    && CXX=g++ GXX=g++ pip3 install --break-system-packages --no-deps --no-build-isolation -e .
 
 ENV PYTHONPATH=/opt/happypose:${PYTHONPATH}
 
