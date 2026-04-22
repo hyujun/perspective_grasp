@@ -60,7 +60,7 @@ Heavy ops (Scene analysis, Grasp planning) use ROS 2 Action Servers to avoid blo
 ## Install
 - `scripts/install_host.sh` — fresh Ubuntu 24.04: NVIDIA driver 560 + CUDA 12.4 + ROS 2 Jazzy + deps + Docker
 - `scripts/install_dependencies.sh` — ROS 2 Jazzy already present, installs remaining C++ / Python deps only
-- `docker compose -f docker/docker-compose.yml build` — builds `ml-base` image for Phase 4 nodes
+- `COMPOSE_BAKE=true docker compose -f docker/docker-compose.yml build` — builds Phase 4 images. `COMPOSE_BAKE=true` parallelizes the four runtime stages via `buildx bake` and shares cache; the Dockerfile uses BuildKit cache mounts for apt + pip so re-builds skip torch/kaolin/nvdiffrast wheel downloads. Drop the env var only if BuildKit is unavailable.
 
 ## Build
 

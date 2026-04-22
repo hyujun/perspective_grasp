@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # =============================================================================
 # perspective_grasp - ML Node Base Image
 #
@@ -6,8 +7,18 @@
 # Docker runs: FoundationPose, CosyPose + MegaPose (shared stage), BundleSDF, SAM2
 #
 # Usage:
-#   docker compose build              # Build all images
-#   docker compose up foundationpose   # Start one service
+#   COMPOSE_BAKE=true docker compose build       # Parallel build (recommended)
+#   docker compose up foundationpose              # Start one service
+#
+# Build performance:
+# * Requires BuildKit (default in Docker 23+). The `# syntax=` line above
+#   activates the v1.7 frontend so `RUN --mount=type=cache,...` is honored.
+# * apt and pip layers use cache mounts — the first build downloads
+#   torch/kaolin/nvdiffrast wheels and apt packages once; subsequent
+#   builds reuse them even when intermediate layers are invalidated.
+# * `COMPOSE_BAKE=true` makes `docker compose build` use buildx bake under
+#   the hood, so the four runtime stages build in parallel against the
+#   shared `ml-base` parent (3-4x wall-clock speedup on first build).
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -22,15 +33,22 @@ ENV ROS_DISTRO=jazzy
 
 SHELL ["/bin/bash", "-c"]
 
+# Disable apt's default post-install cache wipe so BuildKit cache mounts
+# below actually retain downloaded .deb files between builds.
+RUN rm -f /etc/apt/apt.conf.d/docker-clean \
+    && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
+        > /etc/apt/apt.conf.d/keep-cache
+
 # ---- ROS 2 Jazzy repository ----
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         curl gnupg2 lsb-release software-properties-common ca-certificates \
     && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
         -o /usr/share/keyrings/ros-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
         http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
-        > /etc/apt/sources.list.d/ros2.list \
-    && rm -rf /var/lib/apt/lists/*
+        > /etc/apt/sources.list.d/ros2.list
 
 # ---- ROS 2 base + packages needed by ML nodes ----
 # ros-base includes: rclpy, sensor_msgs, std_msgs, geometry_msgs, launch_ros
@@ -39,7 +57,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   tf2-ros:            Transform lookups (camera frame → base frame)
 #   tf2-geometry-msgs:  Transform pose messages
 #   image-transport:    Efficient image transport (compressed topics)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-ros-base \
         python3-colcon-common-extensions \
         python3-pip \
@@ -49,8 +69,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-cv-bridge \
         ros-jazzy-tf2-ros \
         ros-jazzy-tf2-geometry-msgs \
-        ros-jazzy-image-transport \
-    && rm -rf /var/lib/apt/lists/*
+        ros-jazzy-image-transport
 
 # numpy is provided by python3-numpy (debian); OpenCV Python bindings come
 # via ros-jazzy-cv-bridge. Skip pip installs here to avoid clashing with
@@ -109,19 +128,22 @@ FROM ml-base AS foundationpose-runtime
 #     C ABI. Letting transitive deps pull numpy 2.x breaks cv2 at import.
 #   * blinker>=1.9: open3d 0.19.0 → flask 3.x → blinker>=1.9, but
 #     python3-blinker 1.7 is pre-installed by ros-jazzy-ros-base.
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages --ignore-installed \
         "numpy<2" "blinker>=1.9"
 
 # Native deps for kaolin / nvdiffrast / open3d / pyrender.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         libegl1 libgl1 libgles2 libglvnd0 libxrender1 libxi6 libxkbcommon0 \
         libsm6 libxext6 libglib2.0-0 libosmesa6-dev freeglut3-dev \
-        ninja-build \
-    && rm -rf /var/lib/apt/lists/*
+        ninja-build
 
 # Pinned Python runtime — single resolution pass for determinism.
 COPY docker/requirements-foundationpose.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 
 # FoundationPose sources — SHA-pinned clone (was @main). Weights are
@@ -163,29 +185,33 @@ FROM ml-base AS cosypose-runtime
 # Shadow apt numpy with a pip-managed 1.x install. cv_bridge in ros-jazzy is
 # compiled against the NumPy 1.x C ABI; transitive deps (scikit-image /
 # pandas / seaborn) otherwise pull numpy 2.x and break cv2 at import time.
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages --ignore-installed \
         "numpy<2"
 
 # Native deps for pytorch3d / panda3d / assimp-based mesh loaders.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         libegl1 libgl1 libgles2 libglvnd0 libxrender1 libxi6 libxkbcommon0 \
         libsm6 libxext6 libglib2.0-0 libosmesa6-dev freeglut3-dev \
-        libassimp-dev ninja-build \
-    && rm -rf /var/lib/apt/lists/*
+        libassimp-dev ninja-build
 
 # Pinned Python runtime — single resolution pass for determinism. Excludes
 # happypose itself (installed --no-deps below, see next block) and
 # pytorch3d (separate --no-build-isolation RUN below; its setup.py does
 # `import torch` at metadata time, which breaks pip's isolated build env).
 COPY docker/requirements-cosypose.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 
 # PyTorch3D — SHA-pinned source build (was @v0.7.9, first tag with torch
 # 2.6 / cu126 support). --no-build-isolation so setup.py sees the torch
 # pinned in the previous RUN; default build isolation spawns a fresh
 # venv without torch and the install fails.
-RUN pip3 install --no-cache-dir --break-system-packages --no-build-isolation \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages --no-build-isolation \
         "pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@33824be3cbc87a7dd1db0f6a9a9de9ac81b2d0ba"
 
 # happypose: clone the full repo (with submodules disabled) instead of
@@ -206,7 +232,8 @@ RUN pip3 install --no-cache-dir --break-system-packages --no-build-isolation \
 # SHA-pinned (was @main, upstream last touched 2023-09).
 # torchtnt / xarray / scikit-learn are pyproject-declared but unused by the
 # CosyPose + MegaPose modules; --no-deps keeps the resolver in a pinned corner.
-RUN pip3 install --no-cache-dir --break-system-packages --no-deps \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages --no-deps \
         "git+https://github.com/agimus-project/happypose.git@2f3d2ebbf17d20157a5a3f7821f62876bf594b03"
 
 # No `--recurse-submodules`: happypose's `.gitmodules` references paths
@@ -218,8 +245,9 @@ RUN git clone https://github.com/agimus-project/happypose.git /opt/happypose \
 
 # cosypose subproject: has pybind11 C++ ext (cosypose_cext) and sets up the
 # top-level `cosypose` namespace.
-RUN cd /opt/happypose/happypose/pose_estimators/cosypose \
-    && pip3 install --no-cache-dir --break-system-packages --no-deps -e .
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    cd /opt/happypose/happypose/pose_estimators/cosypose \
+    && pip3 install --break-system-packages --no-deps -e .
 
 ENV PYTHONPATH=/opt/happypose:${PYTHONPATH}
 
@@ -276,29 +304,33 @@ FROM ml-base AS bundlesdf-runtime
 #   * numpy<2: cv_bridge NumPy 1.x ABI.
 #   * blinker>=1.9: open3d 0.19.0 → flask 3.x → blinker>=1.9, vs the
 #     python3-blinker 1.7 that ros-jazzy-ros-base drops in.
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages --ignore-installed \
         "numpy<2" "blinker>=1.9"
 
 # Native deps: kaolin / nvdiffrast / open3d / pyrender / BundleSDF C++ ext.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         libegl1 libgl1 libgles2 libglvnd0 libxrender1 libxi6 libxkbcommon0 \
         libsm6 libxext6 libglib2.0-0 libosmesa6-dev freeglut3-dev \
         libeigen3-dev libboost-all-dev libyaml-cpp-dev libpcl-dev \
-        ninja-build \
-    && rm -rf /var/lib/apt/lists/*
+        ninja-build
 
 # Pinned Python runtime — single resolution pass for determinism. Excludes
 # pytorch3d (separate --no-build-isolation RUN below; its setup.py does
 # `import torch` at metadata time, which breaks pip's isolated build env).
 COPY docker/requirements-bundlesdf.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 
 # PyTorch3D — SHA-pinned source build (was @v0.7.9, first tag with torch
 # 2.6 / cu126 support). --no-build-isolation so setup.py sees the torch
 # pinned in the previous RUN; default build isolation spawns a fresh
 # venv without torch and the install fails.
-RUN pip3 install --no-cache-dir --break-system-packages --no-build-isolation \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages --no-build-isolation \
         "pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@33824be3cbc87a7dd1db0f6a9a9de9ac81b2d0ba"
 
 # BundleSDF sources — SHA-pinned clone. Weights are volume-mounted at
@@ -331,13 +363,15 @@ FROM ml-base AS sam2-runtime
 # Install this FIRST (with --ignore-installed) so the debian-managed
 # numpy 1.26 gets shadowed by a pip-managed 1.x in /usr/local, and later
 # torch / sam2 installs pick it up without attempting their own upgrade.
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages --ignore-installed \
         "numpy<2"
 
 # Pinned Python runtime — single resolution pass for determinism. Pulls
 # torch 2.6 + cu126 and SAM2 @ SHA (was @main, upstream last touched 2024-12).
 COPY docker/requirements-sam2.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip3 install --break-system-packages -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 
 # Bake the ROS 2 node source + compile it into /ws/install. See

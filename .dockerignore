@@ -12,7 +12,10 @@ venv/
 *.engine
 *.trt
 *.pth
-models/weights/
+# Model weights / meshes are mounted as volumes at runtime — never baked
+# into images. Excluding the entire tree keeps the build context small
+# (was sending ~1.4 GB to the daemon every build).
+models/
 debug_recordings/
 *.mp4
 core

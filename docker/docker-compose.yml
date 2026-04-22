@@ -6,10 +6,17 @@
 #
 # Production usage (ROS 2 node source is baked into the image, no runtime
 # colcon build — container starts and immediately launches):
-#   docker compose -f docker/docker-compose.yml build
+#   COMPOSE_BAKE=true docker compose -f docker/docker-compose.yml build
 #   docker compose -f docker/docker-compose.yml up foundationpose -d
 #   docker compose -f docker/docker-compose.yml logs -f foundationpose
 #   docker compose -f docker/docker-compose.yml down
+#
+# COMPOSE_BAKE=true routes the build through `docker buildx bake`, so the
+# four runtime stages (foundationpose / cosypose / bundlesdf / sam2) build
+# in parallel against the shared `ml-base` parent and reuse downloaded
+# torch/cu126 wheels via the BuildKit cache mounts in the Dockerfile.
+# Without it, compose builds each service serially and re-resolves the
+# graph per service — much slower wall-clock time on cold builds.
 #
 # Development usage (bind-mounts packages/phase4_refinement/<pkg> and re-runs
 # colcon build on container start so local edits are picked up without an
