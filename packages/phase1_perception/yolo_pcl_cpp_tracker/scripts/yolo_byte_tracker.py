@@ -33,7 +33,7 @@ class YoloByteTrackerNode(Node):
         self.declare_parameter('models_dir', '')
         self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('device', '0')  # GPU device ID
-        self.declare_parameter('image_topic', '/camera/color/image_raw')
+        self.declare_parameter('image_topic', 'camera/color/image_raw')
         self.declare_parameter('track_buffer', 30)
         self.declare_parameter('track_thresh', 0.5)
         self.declare_parameter('match_thresh', 0.8)

@@ -17,6 +17,82 @@ All commands below assume the workspace is built and all three layers are source
 
 > **Why the venv matters at runtime.** Host-side pip deps (`ultralytics` used by `yolo_pcl_cpp_tracker`) live in `<workspace>/.venv`, not in `~/.local` or `/usr/lib/python3/dist-packages`. Without the venv active, `ros2 launch yolo_pcl_cpp_tracker tracker.launch.py` (and any launch file that spins it up, including `perception_system.launch.py`) crashes with `ModuleNotFoundError: No module named 'ultralytics'`. Docker-hosted Phase 4 nodes are unaffected — they use the venv inside the container image.
 
+## Camera drivers
+
+Launch the camera driver **before** the perception stack, and make its namespace match the `namespace` field in your `camera_config*.yaml`. Phase 1 subscribes on relative topic names (`camera/color/image_raw`, `camera/depth/points`, `camera/depth/camera_info`) so they resolve under `perception_system.launch.py`'s `PushRosNamespace`. If the driver publishes on the wrong namespace — or on a different topic layout — subscriptions will never connect.
+
+Rule of thumb: `camera_config_1cam.yaml` (namespace `""`) → driver publishes in root. `camera_config.yaml` (namespaces `/cam0`, `/cam1`, `/cam2`) → one driver per camera, each under its own namespace.
+
+### RealSense (`realsense2_camera`)
+
+The Phase 1 topic convention matches the RealSense driver's native layout — no remapping needed.
+
+**Single camera** (root namespace, pairs with `camera_config_1cam.yaml`):
+
+```bash
+ros2 launch realsense2_camera rs_launch.py \
+    camera_namespace:='' \
+    camera_name:=camera \
+    pointcloud.enable:=true \
+    align_depth.enable:=true
+```
+
+**Multi-camera** — one driver per camera, namespace must match the YAML:
+
+```bash
+# /cam0
+ros2 launch realsense2_camera rs_launch.py \
+    camera_namespace:=cam0 camera_name:=camera \
+    serial_no:='_123456789012' \
+    pointcloud.enable:=true align_depth.enable:=true
+
+# /cam1 (and similarly /cam2)
+ros2 launch realsense2_camera rs_launch.py \
+    camera_namespace:=cam1 camera_name:=camera \
+    serial_no:='_223456789012' \
+    pointcloud.enable:=true align_depth.enable:=true
+```
+
+`serial_no` uses the underscore-prefixed form (`_<SERIAL>`). The `SERIAL_CAMx` placeholders in `camera_config*.yaml` are for documentation — fill in real device serials. For multi-camera hardware sync, set `sync_mode` on the physical connector and keep the YAML's `sync_mode` field consistent (0=independent, 1=master, 2=slave).
+
+### Stereolabs ZED (`zed-ros2-wrapper`)
+
+ZED's native topic names (`rgb/image_rect_color`, `point_cloud/cloud_registered`, `depth/camera_info`) differ from the RealSense-flavored Phase 1 defaults, so you need either topic relays or parameter overrides.
+
+**Launch (per camera)** — ZED's wrapper treats `camera_name` as both the node name and the topic namespace:
+
+```bash
+ros2 launch zed_wrapper zed_camera.launch.py \
+    camera_model:=zed2i \
+    camera_name:=cam0 \
+    serial_number:=12345
+```
+
+Published topics land under `/cam0/rgb/...`, `/cam0/point_cloud/...`, `/cam0/depth/...`.
+
+**Option A — topic relay** (quickest, keeps Phase 1 defaults untouched):
+
+```bash
+ros2 run topic_tools relay /cam0/rgb/image_rect_color         /cam0/camera/color/image_raw
+ros2 run topic_tools relay /cam0/point_cloud/cloud_registered /cam0/camera/depth/points
+ros2 run topic_tools relay /cam0/depth/camera_info            /cam0/camera/depth/camera_info
+```
+
+Repeat per camera namespace.
+
+**Option B — override Phase 1 parameters** to point at ZED's native topic names. Keep them relative so `PushRosNamespace` still prefixes the camera namespace:
+
+```yaml
+# Local override of tracker_params.yaml (ZED variant)
+yolo_pcl_cpp_tracker:
+  ros__parameters:
+    detection_topic: yolo/detections                 # unchanged (Phase 1 → Phase 1)
+    cloud_topic: point_cloud/cloud_registered        # ZED native
+    camera_info_topic: depth/camera_info             # ZED native
+```
+
+Also pass `image_topic:=rgb/image_rect_color` to `yolo_byte_tracker`.
+
 ## Quick start — single camera
 
 Launches the full host-side pipeline (YOLO tracker + ICP + pose filter + fusion + debug visualizer) with a single connected camera:
