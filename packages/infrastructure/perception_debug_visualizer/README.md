@@ -6,20 +6,29 @@ Real-time OpenCV debug overlay for perception pipeline monitoring.
 
 Consolidates visualization of object detections, smoothed poses, and pipeline status onto a single annotated debug image stream. Useful for development and troubleshooting of the perception pipeline.
 
+Multi-camera aware: subscribes to **all** cameras listed in a `perception_bringup` `camera_config*.yaml` and republishes a single overlayed image for the `active_camera_index` camera. Hot-swap via `ros2 param set`.
+
+**See [`docs/DEBUGGING.md`](docs/DEBUGGING.md) for launch recipes and a symptom-driven debugging playbook.**
+
 ## Node
 
 **Node Name**: `perception_debug_visualizer`
 
 | | |
 |---|---|
-| **Subscribes** | Image topic (`Image`), `/yolo/detections` (`DetectionArray`), `/smoother/smoothed_poses` (`PoseWithMetaArray`), `/meta_controller/active_pipeline` (`PipelineStatus`) |
+| **Subscribes (per-camera)** | `/{ns}/{image_topic_suffix}` (`Image`), `/{ns}/{detection_topic_suffix}` (`DetectionArray`) — one pair per entry in `camera_namespaces` |
+| **Subscribes (global)**     | `/smoother/smoothed_poses` (`PoseWithMetaArray`), `/meta_controller/active_pipeline` (`PipelineStatus`) |
 | **Publishes** | `/debug/image` (`Image`) |
 
 ## Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `image_topic` | `/camera/color/image_raw` | Input camera image topic |
+| `camera_namespaces` | `[""]` | Per-camera namespace list. Driven by `camera_config*.yaml` at launch. |
+| `image_topic_suffix` | `camera/color/image_raw` | Topic suffix composed with each namespace. |
+| `detection_topic_suffix` | `yolo/detections` | Topic suffix composed with each namespace. |
+| `active_camera_index` | `0` | Which camera gets overlayed on `/debug/image`. Hot-swappable. |
+| `image_topic` | `""` | Legacy override — if non-empty, replaces camera 0's computed image topic. |
 
 ## Visualization Features
 
@@ -47,12 +56,12 @@ colcon build --packages-select perception_debug_visualizer
 
 ## Tests
 
-`ament_cmake_gtest` — 13 cases across 2 binaries:
+`ament_cmake_gtest` — 16 cases across 2 binaries:
 
 | Binary | Cases | What it covers |
 |---|---:|---|
 | `test_overlay` | 11 | `draw_mode_overlay`: empty-image no-op, modifies pixels, paints only top band, green-only color, preserves dims; `draw_detections`: empty array, single bbox paints inside ROI, clamps out-of-bounds bbox, zero-sized bbox skipped, empty image no-op, multiple bboxes |
-| `test_visualizer_smoke` | 2 | Node constructs, image republished to `/debug/image` carries the mode overlay (verified via in-process pub/sub) |
+| `test_visualizer_smoke` | 5 | Node constructs, legacy `image_topic` republish path, multi-camera construction with 3 namespaces, `active_camera_index` runtime update + out-of-range rejection, `compose_topic` helper namespace/suffix joining |
 
 ```bash
 colcon test --packages-select perception_debug_visualizer

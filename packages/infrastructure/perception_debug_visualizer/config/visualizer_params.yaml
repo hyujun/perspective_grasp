@@ -1,3 +1,12 @@
 perception_debug_visualizer:
   ros__parameters:
-    image_topic: /camera/color/image_raw
+    # List of camera namespaces. "" = root (1-cam). Overridden at launch time
+    # when a camera_config.yaml is parsed by perception_bringup.
+    camera_namespaces: [""]
+    image_topic_suffix: "camera/color/image_raw"
+    detection_topic_suffix: "yolo/detections"
+    # Which camera (index into camera_namespaces) gets overlayed on /debug/image.
+    # Hot-swap at runtime: `ros2 param set /perception_debug_visualizer active_camera_index 1`
+    active_camera_index: 0
+    # Legacy override — if non-empty, replaces camera 0's computed image topic.
+    image_topic: ""

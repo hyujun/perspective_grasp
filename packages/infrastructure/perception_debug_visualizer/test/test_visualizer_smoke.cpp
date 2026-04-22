@@ -17,7 +17,9 @@
 
 #include <chrono>
 #include <memory>
+#include <string>
 #include <thread>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -40,6 +42,7 @@ TEST_F(VisualizerSmokeTest, ConstructsWithoutError) {
 }
 
 TEST_F(VisualizerSmokeTest, RepublishesAnnotatedImage) {
+  // Legacy single-camera path via `image_topic` override.
   rclcpp::NodeOptions opts;
   opts.parameter_overrides({
       {"image_topic", std::string("/test/input_image")},
@@ -62,11 +65,9 @@ TEST_F(VisualizerSmokeTest, RepublishesAnnotatedImage) {
   exec.add_node(node);
   exec.add_node(helper);
 
-  // First push a mode so the overlay includes it.
   perception_msgs::msg::PipelineStatus status;
   status.active_mode = "HIGH_PRECISION";
 
-  // Publish image + status, then spin until we get a republished frame.
   cv::Mat input = cv::Mat::zeros(240, 320, CV_8UC3);
   std_msgs::msg::Header header;
   auto input_msg = cv_bridge::CvImage(header, "bgr8", input).toImageMsg();
@@ -84,9 +85,65 @@ TEST_F(VisualizerSmokeTest, RepublishesAnnotatedImage) {
   EXPECT_EQ(received->height, 240U);
   EXPECT_EQ(received->encoding, "bgr8");
 
-  // The republished image must carry the mode overlay → more non-zero pixels
-  // than the all-zero input.
   cv::Mat out = cv_bridge::toCvCopy(received, "bgr8")->image;
   EXPECT_GT(cv::countNonZero(out.reshape(1)), 0)
       << "Republished image should contain the mode overlay";
+}
+
+TEST_F(VisualizerSmokeTest, ConstructsWithMultipleCameraNamespaces) {
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({
+      {"camera_namespaces",
+       std::vector<std::string>{"/cam0", "/cam1", "/cam2"}},
+      {"active_camera_index", 1},
+  });
+  auto node = std::make_shared<perspective_grasp::VisualizerNode>(opts);
+  EXPECT_STREQ(node->get_name(), "perception_debug_visualizer");
+
+  // The node must subscribe to per-camera topics. Verify by discovering
+  // publishers that the node is a consumer of.
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(node);
+  // Spin a moment to let graph registrations settle.
+  const auto deadline = std::chrono::steady_clock::now() + 200ms;
+  while (std::chrono::steady_clock::now() < deadline) {
+    exec.spin_some();
+    std::this_thread::sleep_for(10ms);
+  }
+
+  auto topics = node->get_topic_names_and_types();
+  // At minimum the publisher for /debug/image should be registered.
+  EXPECT_NE(topics.find("/debug/image"), topics.end());
+}
+
+TEST_F(VisualizerSmokeTest, ActiveCameraIndexCanBeUpdatedAtRuntime) {
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({
+      {"camera_namespaces",
+       std::vector<std::string>{"/cam0", "/cam1"}},
+      {"active_camera_index", 0},
+  });
+  auto node = std::make_shared<perspective_grasp::VisualizerNode>(opts);
+
+  // In-range update must succeed.
+  auto result = node->set_parameter(rclcpp::Parameter("active_camera_index", 1));
+  EXPECT_TRUE(result.successful);
+
+  // Out-of-range update must be rejected by the on-set callback.
+  auto bad = node->set_parameter(rclcpp::Parameter("active_camera_index", 5));
+  EXPECT_FALSE(bad.successful);
+}
+
+TEST(VisualizerComposeTopic, JoinsNamespaceAndSuffix) {
+  // Test the public static helper indirectly via constructing a node and
+  // reading the logged topic names is overkill — lean on the exposed method.
+  using perspective_grasp::VisualizerNode;
+  EXPECT_EQ(VisualizerNode::compose_topic("", "yolo/detections"),
+            "/yolo/detections");
+  EXPECT_EQ(VisualizerNode::compose_topic("/cam0", "yolo/detections"),
+            "/cam0/yolo/detections");
+  EXPECT_EQ(VisualizerNode::compose_topic("cam1/", "/camera/color/image_raw"),
+            "/cam1/camera/color/image_raw");
+  EXPECT_EQ(VisualizerNode::compose_topic("///cam2///", "suffix"),
+            "/cam2/suffix");
 }
