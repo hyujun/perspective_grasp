@@ -162,7 +162,7 @@ class BundleSdfNode(LifecycleNode):
             SegmentationArray, self._masks_topic,
             self._masks_callback, qos,
         )
-        self._pub_poses = self.create_publisher(
+        self._pub_poses = self.create_lifecycle_publisher(
             PoseWithMetaArray, self._poses_topic, qos,
         )
         self.get_logger().info(
