@@ -4,6 +4,13 @@
 # Host runs: C++ nodes, camera drivers, ur5e controller, RViz2, YOLO
 # Docker runs: GPU-heavy Python ML nodes with complex dependencies
 #
+# All five ML nodes are rclpy LifecycleNodes. Each service's launch file
+# auto-drives the node UNCONFIGURED → INACTIVE → ACTIVE on startup
+# (``autostart:=true`` is the default), so the container entrypoint
+# yields a node that is actually processing. To manage the lifecycle
+# externally (e.g., from `perception_meta_controller`), pass
+# ``autostart:=false`` to the inner ``ros2 launch`` command.
+#
 # Production usage (ROS 2 node source is baked into the image, no runtime
 # colcon build — container starts and immediately launches):
 #   COMPOSE_BAKE=true docker compose -f docker/docker-compose.yml build

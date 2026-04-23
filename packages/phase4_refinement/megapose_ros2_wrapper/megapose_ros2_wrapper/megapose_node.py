@@ -140,7 +140,7 @@ class MegaPoseNode(LifecycleNode):
             DetectionArray, self._detections_topic,
             self._detections_callback, qos,
         )
-        self._pub_poses = self.create_publisher(
+        self._pub_poses = self.create_lifecycle_publisher(
             PoseWithMetaArray, self._poses_topic, qos,
         )
         self.get_logger().info(

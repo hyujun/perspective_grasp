@@ -127,7 +127,7 @@ class Sam2SegmentorNode(LifecycleNode):
             DetectionArray, self._detections_topic,
             self._detections_callback, qos,
         )
-        self._pub_masks = self.create_publisher(
+        self._pub_masks = self.create_lifecycle_publisher(
             SegmentationArray, self._masks_topic, qos,
         )
         self.get_logger().info(
