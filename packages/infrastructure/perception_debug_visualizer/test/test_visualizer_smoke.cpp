@@ -13,6 +13,8 @@
 #include <perception_msgs/msg/detection.hpp>
 #include <perception_msgs/msg/detection_array.hpp>
 #include <perception_msgs/msg/pipeline_status.hpp>
+#include <perception_msgs/msg/segmentation.hpp>
+#include <perception_msgs/msg/segmentation_array.hpp>
 #include <sensor_msgs/msg/image.hpp>
 
 #include <chrono>
@@ -132,6 +134,138 @@ TEST_F(VisualizerSmokeTest, ActiveCameraIndexCanBeUpdatedAtRuntime) {
   // Out-of-range update must be rejected by the on-set callback.
   auto bad = node->set_parameter(rclcpp::Parameter("active_camera_index", 5));
   EXPECT_FALSE(bad.successful);
+}
+
+TEST_F(VisualizerSmokeTest, MaskParametersCanBeUpdatedAtRuntime) {
+  auto node = std::make_shared<perspective_grasp::VisualizerNode>();
+
+  EXPECT_TRUE(node->set_parameter(rclcpp::Parameter("show_masks", false)).successful);
+  EXPECT_TRUE(node->set_parameter(rclcpp::Parameter("show_masks", true)).successful);
+  EXPECT_TRUE(node->set_parameter(rclcpp::Parameter("mask_alpha", 0.8)).successful);
+
+  // Out-of-range alpha must be rejected.
+  auto bad = node->set_parameter(rclcpp::Parameter("mask_alpha", 1.5));
+  EXPECT_FALSE(bad.successful);
+}
+
+TEST_F(VisualizerSmokeTest, MasksAreOverlayedOnDebugImage) {
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({
+      {"image_topic", std::string("/test/input_image")},
+      {"mask_alpha", 0.8},
+  });
+  auto node = std::make_shared<perspective_grasp::VisualizerNode>(opts);
+
+  auto helper = std::make_shared<rclcpp::Node>("mask_smoke_helper");
+  auto pub_image = helper->create_publisher<sensor_msgs::msg::Image>(
+      "/test/input_image", rclcpp::QoS(1).best_effort());
+  auto pub_masks =
+      helper->create_publisher<perception_msgs::msg::SegmentationArray>(
+          "/sam2/masks", rclcpp::QoS(1).best_effort());
+
+  sensor_msgs::msg::Image::SharedPtr received;
+  auto sub = helper->create_subscription<sensor_msgs::msg::Image>(
+      "/debug/image", rclcpp::QoS(1).best_effort(),
+      [&](sensor_msgs::msg::Image::SharedPtr msg) { received = msg; });
+
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(node);
+  exec.add_node(helper);
+
+  const int H = 240, W = 320;
+  cv::Mat input = cv::Mat::zeros(H, W, CV_8UC3);
+  std_msgs::msg::Header header;
+  auto input_msg = cv_bridge::CvImage(header, "bgr8", input).toImageMsg();
+
+  perception_msgs::msg::SegmentationArray masks;
+  perception_msgs::msg::Segmentation seg;
+  seg.id = 42;
+  seg.confidence = 0.95f;
+  seg.mask.height = H;
+  seg.mask.width = W;
+  seg.mask.encoding = "mono8";
+  seg.mask.step = W;
+  seg.mask.data.assign(H * W, 0);
+  // Fill a rectangle [100, 150) x [100, 150) with foreground.
+  for (int y = 100; y < 150; ++y) {
+    for (int x = 100; x < 150; ++x) {
+      seg.mask.data[y * W + x] = 255;
+    }
+  }
+  masks.segmentations.push_back(seg);
+
+  const auto deadline = std::chrono::steady_clock::now() + 2s;
+  while (!received && std::chrono::steady_clock::now() < deadline) {
+    pub_masks->publish(masks);
+    pub_image->publish(*input_msg);
+    exec.spin_some();
+    std::this_thread::sleep_for(20ms);
+  }
+
+  ASSERT_TRUE(received) << "Visualizer did not republish within 2s";
+  cv::Mat out = cv_bridge::toCvCopy(received, "bgr8")->image;
+  // Inside the mask region we expect tinted pixels; outside (far from bbox
+  // and text) should remain black.
+  const auto inside = out.at<cv::Vec3b>(125, 125);
+  EXPECT_GT(inside[0] + inside[1] + inside[2], 0)
+      << "Expected mask tint inside foreground";
+}
+
+TEST_F(VisualizerSmokeTest, ShowMasksFalseDisablesOverlay) {
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({
+      {"image_topic", std::string("/test/input_image2")},
+      {"show_masks", false},
+  });
+  auto node = std::make_shared<perspective_grasp::VisualizerNode>(opts);
+
+  auto helper = std::make_shared<rclcpp::Node>("mask_off_helper");
+  auto pub_image = helper->create_publisher<sensor_msgs::msg::Image>(
+      "/test/input_image2", rclcpp::QoS(1).best_effort());
+  auto pub_masks =
+      helper->create_publisher<perception_msgs::msg::SegmentationArray>(
+          "/sam2/masks", rclcpp::QoS(1).best_effort());
+
+  sensor_msgs::msg::Image::SharedPtr received;
+  auto sub = helper->create_subscription<sensor_msgs::msg::Image>(
+      "/debug/image", rclcpp::QoS(1).best_effort(),
+      [&](sensor_msgs::msg::Image::SharedPtr msg) { received = msg; });
+
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(node);
+  exec.add_node(helper);
+
+  const int H = 240, W = 320;
+  cv::Mat input = cv::Mat::zeros(H, W, CV_8UC3);
+  std_msgs::msg::Header header;
+  auto input_msg = cv_bridge::CvImage(header, "bgr8", input).toImageMsg();
+
+  perception_msgs::msg::SegmentationArray masks;
+  perception_msgs::msg::Segmentation seg;
+  seg.id = 7;
+  seg.mask.height = H;
+  seg.mask.width = W;
+  seg.mask.encoding = "mono8";
+  seg.mask.step = W;
+  seg.mask.data.assign(H * W, 255);  // full foreground
+  masks.segmentations.push_back(seg);
+
+  const auto deadline = std::chrono::steady_clock::now() + 2s;
+  while (!received && std::chrono::steady_clock::now() < deadline) {
+    pub_masks->publish(masks);
+    pub_image->publish(*input_msg);
+    exec.spin_some();
+    std::this_thread::sleep_for(20ms);
+  }
+
+  ASSERT_TRUE(received);
+  cv::Mat out = cv_bridge::toCvCopy(received, "bgr8")->image;
+  // With show_masks=false, the interior (away from the mode-text band) must
+  // stay black even though a full-frame mask was published.
+  const auto mid = out.at<cv::Vec3b>(150, 150);
+  EXPECT_EQ(mid[0], 0);
+  EXPECT_EQ(mid[1], 0);
+  EXPECT_EQ(mid[2], 0);
 }
 
 TEST(VisualizerComposeTopic, JoinsNamespaceAndSuffix) {

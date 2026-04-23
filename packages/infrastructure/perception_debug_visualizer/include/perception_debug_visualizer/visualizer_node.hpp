@@ -7,6 +7,7 @@
 #include <perception_msgs/msg/detection_array.hpp>
 #include <perception_msgs/msg/pose_with_meta_array.hpp>
 #include <perception_msgs/msg/pipeline_status.hpp>
+#include <perception_msgs/msg/segmentation_array.hpp>
 
 #include <opencv2/opencv.hpp>
 
@@ -29,6 +30,8 @@ private:
     std::size_t cam_index, const sensor_msgs::msg::Image::ConstSharedPtr & msg);
   void detections_callback(
     std::size_t cam_index, const perception_msgs::msg::DetectionArray::SharedPtr msg);
+  void segmentations_callback(
+    std::size_t cam_index, const perception_msgs::msg::SegmentationArray::SharedPtr msg);
   void smoothed_poses_callback(const perception_msgs::msg::PoseWithMetaArray::SharedPtr msg);
   void pipeline_status_callback(const perception_msgs::msg::PipelineStatus::SharedPtr msg);
 
@@ -41,6 +44,9 @@ private:
   std::vector<rclcpp::Subscription<perception_msgs::msg::DetectionArray>::SharedPtr>
     sub_detections_;
   std::vector<perception_msgs::msg::DetectionArray::SharedPtr> latest_detections_;
+  std::vector<rclcpp::Subscription<perception_msgs::msg::SegmentationArray>::SharedPtr>
+    sub_masks_;
+  std::vector<perception_msgs::msg::SegmentationArray::SharedPtr> latest_masks_;
 
   // Global subs
   rclcpp::Subscription<perception_msgs::msg::PoseWithMetaArray>::SharedPtr sub_smoothed_;
@@ -53,6 +59,8 @@ private:
   perception_msgs::msg::PoseWithMetaArray::SharedPtr latest_poses_;
   std::string pipeline_mode_;
   std::size_t active_camera_index_ {0};
+  bool show_masks_ {true};
+  double mask_alpha_ {0.4};
 };
 
 }  // namespace perspective_grasp

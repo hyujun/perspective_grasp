@@ -9,11 +9,47 @@
 
 #include <perception_msgs/msg/detection.hpp>
 #include <perception_msgs/msg/detection_array.hpp>
+#include <perception_msgs/msg/segmentation.hpp>
+#include <perception_msgs/msg/segmentation_array.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 namespace {
 
 using perspective_grasp::detail::draw_detections;
 using perspective_grasp::detail::draw_mode_overlay;
+using perspective_grasp::detail::draw_segmentations;
+
+perception_msgs::msg::Segmentation makeSegmentation(
+    int32_t id, int rows, int cols,
+    const cv::Rect& fg_rect, uint32_t bbox_x = 0,
+    uint32_t bbox_y = 0, uint32_t bbox_w = 0, uint32_t bbox_h = 0,
+    float confidence = 0.9f) {
+  perception_msgs::msg::Segmentation seg;
+  seg.id = id;
+  seg.confidence = confidence;
+  seg.bbox.x_offset = bbox_x;
+  seg.bbox.y_offset = bbox_y;
+  seg.bbox.width = bbox_w;
+  seg.bbox.height = bbox_h;
+
+  seg.mask.height = static_cast<uint32_t>(rows);
+  seg.mask.width = static_cast<uint32_t>(cols);
+  seg.mask.encoding = "mono8";
+  seg.mask.is_bigendian = 0;
+  seg.mask.step = static_cast<uint32_t>(cols);
+  seg.mask.data.assign(static_cast<std::size_t>(rows * cols), 0);
+
+  cv::Rect clipped = fg_rect & cv::Rect(0, 0, cols, rows);
+  for (int y = clipped.y; y < clipped.y + clipped.height; ++y) {
+    for (int x = clipped.x; x < clipped.x + clipped.width; ++x) {
+      seg.mask.data[static_cast<std::size_t>(y * cols + x)] = 255;
+    }
+  }
+  return seg;
+}
 
 cv::Mat makeBlankImage(int rows = 480, int cols = 640) {
   return cv::Mat::zeros(rows, cols, CV_8UC3);
@@ -162,4 +198,113 @@ TEST(OverlayTest, DrawDetectionsMultipleBoxes) {
     EXPECT_GT(cv::countNonZero(roi.reshape(1)), 0)
         << "Expected painted pixels inside bbox for class " << det.class_name;
   }
+}
+
+// --- draw_segmentations ------------------------------------------------------
+
+TEST(OverlayTest, DrawSegmentationsEmptyImageNoOp) {
+  cv::Mat empty;
+  perception_msgs::msg::SegmentationArray arr;
+  arr.segmentations.push_back(makeSegmentation(1, 10, 10, cv::Rect(0, 0, 5, 5)));
+  EXPECT_EQ(draw_segmentations(empty, arr), 0u);
+  EXPECT_TRUE(empty.empty());
+}
+
+TEST(OverlayTest, DrawSegmentationsEmptyArrayLeavesImageUnchanged) {
+  cv::Mat img = makeBlankImage();
+  const cv::Mat before = img.clone();
+  perception_msgs::msg::SegmentationArray arr;
+  EXPECT_EQ(draw_segmentations(img, arr), 0u);
+
+  cv::Mat diff;
+  cv::absdiff(img, before, diff);
+  EXPECT_EQ(cv::countNonZero(diff.reshape(1)), 0);
+}
+
+TEST(OverlayTest, DrawSegmentationsSizeMismatchCounted) {
+  cv::Mat img = makeBlankImage(240, 320);
+  const cv::Mat before = img.clone();
+  perception_msgs::msg::SegmentationArray arr;
+  // Mask is 480x640 but image is 240x320 — must be skipped, not resized.
+  arr.segmentations.push_back(
+      makeSegmentation(1, 480, 640, cv::Rect(0, 0, 10, 10)));
+  EXPECT_EQ(draw_segmentations(img, arr), 1u);
+
+  cv::Mat diff;
+  cv::absdiff(img, before, diff);
+  EXPECT_EQ(cv::countNonZero(diff.reshape(1)), 0)
+      << "Size-mismatched mask must not paint any pixel";
+}
+
+TEST(OverlayTest, DrawSegmentationsEmptyMaskDataCounted) {
+  cv::Mat img = makeBlankImage();
+  perception_msgs::msg::SegmentationArray arr;
+  perception_msgs::msg::Segmentation seg;
+  seg.id = 7;
+  seg.mask.height = 0;
+  seg.mask.width = 0;
+  arr.segmentations.push_back(seg);
+  EXPECT_EQ(draw_segmentations(img, arr), 1u);
+}
+
+TEST(OverlayTest, DrawSegmentationsBlendsForegroundPixels) {
+  cv::Mat img = makeBlankImage();
+  perception_msgs::msg::SegmentationArray arr;
+  arr.segmentations.push_back(
+      makeSegmentation(3, img.rows, img.cols,
+                       cv::Rect(100, 100, 50, 50),
+                       100, 100, 50, 50));
+  EXPECT_EQ(draw_segmentations(img, arr, 0.5), 0u);
+
+  // Interior foreground pixel must be tinted away from black.
+  const auto inside = img.at<cv::Vec3b>(125, 125);
+  EXPECT_GT(inside[0] + inside[1] + inside[2], 0)
+      << "Mask foreground should be blended with color";
+
+  // Background pixel far from the mask stays black (rectangle outline drawn
+  // on bbox edge may paint elsewhere, so sample from a safe corner).
+  const auto outside = img.at<cv::Vec3b>(10, 10);
+  EXPECT_EQ(outside[0], 0);
+  EXPECT_EQ(outside[1], 0);
+  EXPECT_EQ(outside[2], 0);
+}
+
+TEST(OverlayTest, DrawSegmentationsMultipleMasksDistinctColors) {
+  cv::Mat img = makeBlankImage();
+  perception_msgs::msg::SegmentationArray arr;
+  arr.segmentations.push_back(
+      makeSegmentation(1, img.rows, img.cols, cv::Rect(50, 50, 40, 40)));
+  arr.segmentations.push_back(
+      makeSegmentation(2, img.rows, img.cols, cv::Rect(300, 300, 40, 40)));
+  EXPECT_EQ(draw_segmentations(img, arr, 0.7), 0u);
+
+  const auto p1 = img.at<cv::Vec3b>(60, 60);
+  const auto p2 = img.at<cv::Vec3b>(310, 310);
+  const int sum1 = p1[0] + p1[1] + p1[2];
+  const int sum2 = p2[0] + p2[1] + p2[2];
+  EXPECT_GT(sum1, 0);
+  EXPECT_GT(sum2, 0);
+  // Distinct ids → distinct hues → at least one channel should differ.
+  const bool differ = (p1[0] != p2[0]) || (p1[1] != p2[1]) || (p1[2] != p2[2]);
+  EXPECT_TRUE(differ) << "Different ids should map to different colors";
+}
+
+TEST(OverlayTest, DrawSegmentationsClampsAlphaOutsideRange) {
+  cv::Mat img_low = makeBlankImage();
+  cv::Mat img_high = makeBlankImage();
+  perception_msgs::msg::SegmentationArray arr;
+  arr.segmentations.push_back(
+      makeSegmentation(5, img_low.rows, img_low.cols,
+                       cv::Rect(100, 100, 30, 30)));
+
+  // alpha < 0 → clamped to 0 → image stays (mostly) unchanged in mask ROI.
+  EXPECT_EQ(draw_segmentations(img_low, arr, -0.5), 0u);
+  const auto inside_low = img_low.at<cv::Vec3b>(115, 115);
+  EXPECT_EQ(inside_low[0] + inside_low[1] + inside_low[2], 0)
+      << "alpha clamped to 0 should leave pixels black";
+
+  // alpha > 1 → clamped to 1 → full color replacement on foreground.
+  EXPECT_EQ(draw_segmentations(img_high, arr, 1.7), 0u);
+  const auto inside_high = img_high.at<cv::Vec3b>(115, 115);
+  EXPECT_GT(inside_high[0] + inside_high[1] + inside_high[2], 0);
 }

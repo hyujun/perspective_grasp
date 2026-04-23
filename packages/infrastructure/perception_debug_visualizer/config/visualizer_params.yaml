@@ -5,8 +5,15 @@ perception_debug_visualizer:
     camera_namespaces: [""]
     image_topic_suffix: "camera/color/image_raw"
     detection_topic_suffix: "yolo/detections"
+    masks_topic_suffix: "sam2/masks"
     # Which camera (index into camera_namespaces) gets overlayed on /debug/image.
     # Hot-swap at runtime: `ros2 param set /perception_debug_visualizer active_camera_index 1`
     active_camera_index: 0
+    # Toggle SAM2 mask overlay at runtime:
+    # `ros2 param set /perception_debug_visualizer show_masks false`
+    show_masks: true
+    # Blending weight for the mask tint in [0, 1]. 0 = image untouched,
+    # 1 = mask color fully replaces image pixels inside the mask.
+    mask_alpha: 0.4
     # Legacy override — if non-empty, replaces camera 0's computed image topic.
     image_topic: ""

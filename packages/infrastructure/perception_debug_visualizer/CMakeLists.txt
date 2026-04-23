@@ -22,6 +22,7 @@ target_include_directories(overlay PUBLIC
 )
 ament_target_dependencies(overlay
   perception_msgs
+  sensor_msgs
 )
 target_link_libraries(overlay ${OpenCV_LIBRARIES})
 
