@@ -22,7 +22,7 @@ RGB-D 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation. **18 ROS 2 
 References:
 - Full architecture, topics, TF frames, QoS, pipeline modes, optional deps: [docs/architecture.md](./docs/architecture.md)
 - Install: [docs/installation.md](./docs/installation.md) — Building: [docs/build.md](./docs/build.md) — Running: [docs/running.md](./docs/running.md) — Debugging: [docs/debugging.md](./docs/debugging.md)
-- Live-GPU prep playbook: [docs/live_gpu_phase0_prep.md](./docs/live_gpu_phase0_prep.md)
+- Phase 4 model weights & meshes: [docs/model_assets.md](./docs/model_assets.md)
 - Per-package detail: `packages/<group>/<pkg>/README.md`
 
 ## 2. Repository Invariants
@@ -66,7 +66,7 @@ retry blindly. Add a test / guard / fallback that encodes the missing constraint
      path, or quick-start changed.
    - **[`docs/`](./docs/) files** — architecture (`architecture.md` for any topic/TF/QoS/
      package/mode change), build/install/running/debugging for command or flow changes, and
-     `live_gpu_phase0_prep.md` for Phase 4 weights/meshes/Docker changes.
+     `model_assets.md` for Phase 4 weights/meshes changes.
    - **This `CLAUDE.md`** — if an invariant, sensor, escalation trigger, or anti-pattern
      became true or stale.
    - **Memory** at `/home/junho/.claude/projects/-home-junho-ros2-ws-perspective-ws-src-perspective-grasp/memory/` —

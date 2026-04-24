@@ -154,26 +154,19 @@ Record the `IMAGE_TAG` value that went to production — it's the rollback coord
 
 ### Model weights
 
-Each Phase 4 service expects weights under a mount point. Either set an env var or drop weights in the default `models/<service>/` directory at repo root:
+`install_host.sh` step 7 creates the `models/<service>/` scaffold. Per-service directory layout, file-naming contracts, and download instructions (SAM2 / FoundationPose / CosyPose+MegaPose / BundleSDF): see [model_assets.md](./model_assets.md).
+
+Quick env-var reference for redirecting any service to an external disk:
 
 ```bash
-# FoundationPose expects two sub-dirs under this mount:
-#   meshes/<class_name>.(obj|ply|stl)   — one file per YOLO class
-#   weights/                            — FoundationPose refiner / scorer checkpoints
-export FOUNDATIONPOSE_WEIGHTS=/path/to/models/foundationpose
-
-# SAM2 checkpoint (sam2_hiera_large.pt)
 export SAM2_WEIGHTS=/path/to/models/sam2
-
-# happypose weights shared by CosyPose + MegaPose; meshes directory shared too
-# (flat: <class>.(obj|ply), one file per YOLO class — .stl not supported).
-export HAPPYPOSE_WEIGHTS=/path/to/models/happypose
+export FOUNDATIONPOSE_WEIGHTS=/path/to/models/foundationpose
+export HAPPYPOSE_WEIGHTS=/path/to/models/happypose          # CosyPose + MegaPose share this
 export MEGAPOSE_MESHES=/path/to/models/megapose/meshes
-
-# BundleSDF writes per-track SDF/debug output here; defaults (track/nerf configs)
-# come from the cloned /opt/BundleSDF repo.
 export BUNDLESDF_WEIGHTS=/path/to/models/bundlesdf
 ```
+
+Unset → docker-compose falls back to `<repo>/models/<service>/`.
 
 ## Verification
 
