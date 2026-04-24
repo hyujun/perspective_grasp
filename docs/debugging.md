@@ -20,14 +20,20 @@ See also:
 ## 1. What the debug visualizer does
 
 Single fan-in debug visualizer. Subscribes to **all** configured cameras and
-republishes a BGR8 annotated image (bbox + mode + camera tag) for **one**
-selected camera on `/debug/image`.
+republishes a BGR8 annotated image (detection bboxes, SAM2 instance masks,
+pose-axis triads, mode + camera tag) for **one** selected camera on
+`/debug/image`.
 
 - Per-camera subscriptions are built from `camera_namespaces`, composed with
-  `image_topic_suffix` / `detection_topic_suffix`.
+  `image_topic_suffix` / `detection_topic_suffix` / `sam2_masks_suffix` /
+  `camera_info_suffix`.
 - Only the camera at `active_camera_index` gets overlayed + republished.
 - `active_camera_index` is hot-swappable: change it at runtime without
   relaunching.
+- Pose-axis triads come from `/smoother/smoothed_poses`, projected through the
+  active camera's `CameraInfo::k` after a TF lookup from the pose's
+  `header.frame_id` to the camera's optical frame. If TF or CameraInfo is
+  missing, axes are silently skipped (other overlays still render).
 
 ### Topic map
 
@@ -35,6 +41,8 @@ selected camera on `/debug/image`.
 |------------|--------------------------------------------------|------------------------|-----------------|
 | Per-cam    | `/{ns}/{image_topic_suffix}` (default `camera/color/image_raw`) | sensor / BEST_EFFORT   | RealSense driver |
 | Per-cam    | `/{ns}/{detection_topic_suffix}` (default `yolo/detections`)    | sensor / BEST_EFFORT   | `yolo_byte_tracker` |
+| Per-cam    | `/{ns}/{sam2_masks_suffix}` (default `sam2/masks`)              | sensor / BEST_EFFORT   | `sam2_instance_segmentor` |
+| Per-cam    | `/{ns}/{camera_info_suffix}` (default `camera/color/camera_info`) | sensor / BEST_EFFORT | RealSense driver |
 | Global     | `/smoother/smoothed_poses`                       | sensor / BEST_EFFORT   | `pose_graph_smoother` |
 | Global     | `/meta_controller/active_pipeline`               | reliable / depth 1     | `perception_meta_controller` |
 | Output     | `/debug/image`                                   | sensor / BEST_EFFORT   | **this node**   |
@@ -260,6 +268,31 @@ ros2 topic list | grep -E "/cam[0-9]+/sam2/masks" # one per camera
   two launches were given different `camera_config` files. Always pass the
   same yaml to both.
 
+### 4.11 Pose-axis triads don't appear on `/debug/image`
+
+Detections and the mode label render, but no X/Y/Z axes are drawn. In order:
+
+```bash
+ros2 param get /perception_debug_visualizer enable_pose_axes    # must be true
+ros2 topic hz  /smoother/smoothed_poses                         # source populated?
+ros2 topic hz  /cam0/camera/color/camera_info                   # intrinsics arriving?
+ros2 run tf2_ros tf2_echo <poses.header.frame_id> cam0_color_optical_frame
+```
+
+- `enable_pose_axes=false` (or `axis_length_m` set tiny) → hot-set it back.
+- No `CameraInfo` on the active camera → the driver isn't publishing or
+  `camera_info_suffix` doesn't match. Check `ros2 node info
+  /perception_debug_visualizer` subscription list.
+- `header.frame_id` empty on `/smoother/smoothed_poses` → upstream (filter or
+  smoother) isn't setting it; the visualizer logs a throttled warning.
+- TF lookup failure (warning `TF lookup 'A' -> 'B' failed`) → either the
+  static TF chain from the pose frame to `cam{N}_color_optical_frame` is
+  missing, or calibration hasn't been run. `ros2 run tf2_tools view_frames`
+  to inspect the tree.
+- Origin with `Z ≤ 0` in the camera frame is culled silently (behind the
+  camera). Verify with `ros2 topic echo --once /smoother/smoothed_poses` and
+  the static transforms — poses beyond the image plane won't draw.
+
 ---
 
 ## 5. Quick diagnostic commands
@@ -306,16 +339,21 @@ docker compose -f docker/docker-compose.yml logs -f <service>
 |--------------------------------|---------------------------------------------------|
 | Default image topic suffix     | `packages/infrastructure/perception_debug_visualizer/config/visualizer_params.yaml: image_topic_suffix` |
 | Detection topic suffix         | `packages/infrastructure/perception_debug_visualizer/config/visualizer_params.yaml: detection_topic_suffix` |
+| SAM2 mask overlay toggle / alpha | `visualizer_params.yaml: enable_sam2_masks`, `mask_alpha` (hot-settable via `ros2 param set`) |
+| Pose-axis overlay toggle / length / thickness | `visualizer_params.yaml: enable_pose_axes`, `axis_length_m`, `pose_axis_thickness` (all hot-settable) |
 | Bbox / mode font size & color  | `packages/infrastructure/perception_debug_visualizer/src/overlay.cpp` (constants at top of the file) |
+| Mask palette colors            | `kMaskPalette` in `overlay.cpp` |
+| Pose-axis colors (X/Y/Z → R/G/B) | `draw_pose_axes()` in `overlay.cpp` |
 | RViz displays                  | `packages/infrastructure/perception_debug_visualizer/rviz/debug_view.rviz` |
 | Launch GUI layout              | `packages/infrastructure/perception_debug_visualizer/launch/debug_visualizer.launch.py` |
 
-If you need additional overlays (e.g. smoothed-pose 2D projection, track-id
-labels, mask contours from SAM2), extend `detail::draw_*` in
+For a new overlay kind, add a pure `detail::draw_*` helper in
 [`overlay.cpp`](../packages/infrastructure/perception_debug_visualizer/src/overlay.cpp)
 and call it from `image_callback` in
-[`visualizer_node.cpp`](../packages/infrastructure/perception_debug_visualizer/src/visualizer_node.cpp) —
-the per-camera cache of the latest message is already available there.
+[`visualizer_node.cpp`](../packages/infrastructure/perception_debug_visualizer/src/visualizer_node.cpp).
+The per-camera caches of the latest detections, masks, and intrinsics are
+already available there, and `latest_poses_` holds the most recent
+`PoseWithMetaArray`.
 
 ---
 

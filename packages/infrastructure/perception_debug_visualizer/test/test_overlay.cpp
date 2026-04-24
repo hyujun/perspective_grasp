@@ -7,16 +7,43 @@
 
 #include <opencv2/core.hpp>
 
+#include <geometry_msgs/msg/pose.hpp>
 #include <perception_msgs/msg/detection.hpp>
 #include <perception_msgs/msg/detection_array.hpp>
 #include <perception_msgs/msg/segmentation.hpp>
 #include <perception_msgs/msg/segmentation_array.hpp>
+
+#include <array>
+#include <cmath>
+#include <vector>
 
 namespace {
 
 using perspective_grasp::detail::draw_detections;
 using perspective_grasp::detail::draw_masks;
 using perspective_grasp::detail::draw_mode_overlay;
+using perspective_grasp::detail::draw_pose_axes;
+using perspective_grasp::detail::project_pose_axes;
+using perspective_grasp::detail::ProjectedAxis;
+
+std::array<double, 9> makeIntrinsics(double fx, double fy, double cx,
+                                     double cy) {
+  return {fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0};
+}
+
+geometry_msgs::msg::Pose makePose(double x, double y, double z,
+                                  double qx = 0.0, double qy = 0.0,
+                                  double qz = 0.0, double qw = 1.0) {
+  geometry_msgs::msg::Pose p;
+  p.position.x = x;
+  p.position.y = y;
+  p.position.z = z;
+  p.orientation.x = qx;
+  p.orientation.y = qy;
+  p.orientation.z = qz;
+  p.orientation.w = qw;
+  return p;
+}
 
 cv::Mat makeBlankImage(int rows = 480, int cols = 640) {
   return cv::Mat::zeros(rows, cols, CV_8UC3);
@@ -307,4 +334,151 @@ TEST(OverlayTest, DrawMasksNegativeIdDoesNotCrash) {
       makeMaskSegmentation(240, 320, 0, 0, 30, 30, /*id=*/-7));
   EXPECT_NO_THROW(draw_masks(img, masks, 1.0f));
   EXPECT_GT(cv::countNonZero(img.reshape(1)), 0);
+}
+
+// --- project_pose_axes -------------------------------------------------------
+
+TEST(OverlayTest, ProjectPoseAxesIdentityAtOpticalAxisHitsPrincipalPoint) {
+  const auto K = makeIntrinsics(500.0, 500.0, 320.0, 240.0);
+  // Pose at (0, 0, 1) with identity orientation: origin projects to (cx, cy).
+  auto proj = project_pose_axes(makePose(0, 0, 1.0), K, /*axis_length=*/0.1);
+  ASSERT_TRUE(proj.has_value());
+  EXPECT_NEAR(proj->origin.x, 320.0, 1e-6);
+  EXPECT_NEAR(proj->origin.y, 240.0, 1e-6);
+  // X body axis tip at (0.1, 0, 1) → u = 500*0.1/1 + 320 = 370
+  EXPECT_NEAR(proj->x_end.x, 370.0, 1e-6);
+  EXPECT_NEAR(proj->x_end.y, 240.0, 1e-6);
+  // Y body axis tip at (0, 0.1, 1) → v = 500*0.1/1 + 240 = 290
+  EXPECT_NEAR(proj->y_end.x, 320.0, 1e-6);
+  EXPECT_NEAR(proj->y_end.y, 290.0, 1e-6);
+  // Z body axis tip at (0, 0, 1.1) collapses onto the principal point.
+  EXPECT_NEAR(proj->z_end.x, 320.0, 1e-6);
+  EXPECT_NEAR(proj->z_end.y, 240.0, 1e-6);
+}
+
+TEST(OverlayTest, ProjectPoseAxesTrackIdIsCarried) {
+  const auto K = makeIntrinsics(500.0, 500.0, 320.0, 240.0);
+  auto proj = project_pose_axes(makePose(0, 0, 1.0), K, 0.05, /*id=*/42);
+  ASSERT_TRUE(proj.has_value());
+  EXPECT_EQ(proj->track_id, 42);
+}
+
+TEST(OverlayTest, ProjectPoseAxesRejectsOriginBehindCamera) {
+  const auto K = makeIntrinsics(500.0, 500.0, 320.0, 240.0);
+  EXPECT_FALSE(project_pose_axes(makePose(0, 0, -0.1), K, 0.05).has_value());
+  EXPECT_FALSE(project_pose_axes(makePose(0, 0, 0.0), K, 0.05).has_value());
+}
+
+TEST(OverlayTest, ProjectPoseAxesRejectsInvalidInputs) {
+  const auto K = makeIntrinsics(500.0, 500.0, 320.0, 240.0);
+  // Non-positive axis length.
+  EXPECT_FALSE(project_pose_axes(makePose(0, 0, 1.0), K, 0.0).has_value());
+  EXPECT_FALSE(project_pose_axes(makePose(0, 0, 1.0), K, -0.05).has_value());
+  // Zero focal length.
+  const auto bad_K = makeIntrinsics(0.0, 500.0, 320.0, 240.0);
+  EXPECT_FALSE(project_pose_axes(makePose(0, 0, 1.0), bad_K, 0.05).has_value());
+}
+
+TEST(OverlayTest, ProjectPoseAxes90DegYawSwapsXEnd) {
+  const auto K = makeIntrinsics(500.0, 500.0, 320.0, 240.0);
+  // 90° rotation about body Z: body X maps to world +Y. Quaternion
+  // (0, 0, sin45, cos45).
+  const double s = std::sin(M_PI / 4.0);
+  const double c = std::cos(M_PI / 4.0);
+  auto proj = project_pose_axes(makePose(0, 0, 1.0, 0, 0, s, c), K, 0.1);
+  ASSERT_TRUE(proj.has_value());
+  // Body-X tip now lives at world (0, 0.1, 1) → v = 290 (not u = 370).
+  EXPECT_NEAR(proj->x_end.x, 320.0, 1e-4);
+  EXPECT_NEAR(proj->x_end.y, 290.0, 1e-4);
+}
+
+// --- draw_pose_axes ----------------------------------------------------------
+
+ProjectedAxis makeCenteredAxis(int32_t id = 0) {
+  ProjectedAxis a;
+  a.origin = {320.0, 240.0};
+  a.x_end = {370.0, 240.0};
+  a.y_end = {320.0, 290.0};
+  a.z_end = {300.0, 220.0};
+  a.track_id = id;
+  return a;
+}
+
+TEST(OverlayTest, DrawPoseAxesEmptyImageNoOp) {
+  cv::Mat empty;
+  std::vector<ProjectedAxis> axes{makeCenteredAxis()};
+  EXPECT_NO_THROW(draw_pose_axes(empty, axes));
+  EXPECT_TRUE(empty.empty());
+}
+
+TEST(OverlayTest, DrawPoseAxesEmptyVectorLeavesImageUnchanged) {
+  cv::Mat img = makeBlankImage();
+  const cv::Mat before = img.clone();
+  draw_pose_axes(img, {});
+  cv::Mat diff;
+  cv::absdiff(img, before, diff);
+  EXPECT_EQ(cv::countNonZero(diff.reshape(1)), 0);
+}
+
+TEST(OverlayTest, DrawPoseAxesPaintsThreeChannelColors) {
+  cv::Mat img = makeBlankImage();
+  // Widely-separated endpoints so the three colored lines don't overlap.
+  ProjectedAxis a;
+  a.origin = {320.0, 240.0};
+  a.x_end = {420.0, 240.0};  // →right, red
+  a.y_end = {320.0, 340.0};  // ↓down, green
+  a.z_end = {220.0, 140.0};  // ↖diagonal, blue
+  draw_pose_axes(img, {a}, 3);
+
+  bool saw_red = false, saw_green = false, saw_blue = false;
+  for (int y = 0; y < img.rows; ++y) {
+    for (int x = 0; x < img.cols; ++x) {
+      const auto px = img.at<cv::Vec3b>(y, x);
+      if (px[2] > px[0] && px[2] > px[1]) saw_red = true;
+      if (px[1] > px[0] && px[1] > px[2]) saw_green = true;
+      if (px[0] > px[1] && px[0] > px[2]) saw_blue = true;
+    }
+  }
+  EXPECT_TRUE(saw_red) << "Expected red (X) pixels";
+  EXPECT_TRUE(saw_green) << "Expected green (Y) pixels";
+  EXPECT_TRUE(saw_blue) << "Expected blue (Z) pixels";
+}
+
+TEST(OverlayTest, DrawPoseAxesOutOfBoundsSkipsWithoutCrash) {
+  cv::Mat img = makeBlankImage(240, 320);
+  ProjectedAxis a;
+  // Origin and all tips far outside the image — clipLine should reject.
+  a.origin = {-1000.0, -1000.0};
+  a.x_end = {-800.0, -1000.0};
+  a.y_end = {-1000.0, -800.0};
+  a.z_end = {-900.0, -900.0};
+  const cv::Mat before = img.clone();
+  EXPECT_NO_THROW(draw_pose_axes(img, {a}));
+  cv::Mat diff;
+  cv::absdiff(img, before, diff);
+  EXPECT_EQ(cv::countNonZero(diff.reshape(1)), 0);
+}
+
+TEST(OverlayTest, DrawPoseAxesMultipleTriadsAllRender) {
+  cv::Mat img = makeBlankImage();
+  std::vector<ProjectedAxis> axes;
+  for (int i = 0; i < 3; ++i) {
+    ProjectedAxis a;
+    const double cx = 100.0 + 150.0 * i;
+    a.origin = {cx, 200.0};
+    a.x_end = {cx + 30.0, 200.0};
+    a.y_end = {cx, 230.0};
+    a.z_end = {cx + 10.0, 190.0};
+    a.track_id = i;
+    axes.push_back(a);
+  }
+  draw_pose_axes(img, axes);
+
+  // Expect painted pixels in each ROI around each axis origin.
+  for (const auto& a : axes) {
+    cv::Rect roi(static_cast<int>(a.origin.x) - 40,
+                 static_cast<int>(a.origin.y) - 40, 80, 80);
+    roi &= cv::Rect(0, 0, img.cols, img.rows);
+    EXPECT_GT(cv::countNonZero(img(roi).reshape(1)), 0);
+  }
 }

@@ -6,11 +6,19 @@ perception_debug_visualizer:
     image_topic_suffix: "camera/color/image_raw"
     detection_topic_suffix: "yolo/detections"
     sam2_masks_suffix: "sam2/masks"
+    camera_info_suffix: "camera/color/camera_info"
     # SAM2 mask overlay. Hot-togglable:
     #   ros2 param set /perception_debug_visualizer enable_sam2_masks false
     #   ros2 param set /perception_debug_visualizer mask_alpha 0.6
     enable_sam2_masks: true
     mask_alpha: 0.4
+    # Pose-axis overlay. Projects /smoother/smoothed_poses into the active
+    # camera using TF + CameraInfo. Hot-togglable:
+    #   ros2 param set /perception_debug_visualizer enable_pose_axes false
+    #   ros2 param set /perception_debug_visualizer axis_length_m 0.1
+    enable_pose_axes: true
+    axis_length_m: 0.05          # meters; must be > 0
+    pose_axis_thickness: 2       # pixels; clamped to [1, 10]
     # Which camera (index into camera_namespaces) gets overlayed on /debug/image.
     # Hot-swap at runtime: `ros2 param set /perception_debug_visualizer active_camera_index 1`
     active_camera_index: 0

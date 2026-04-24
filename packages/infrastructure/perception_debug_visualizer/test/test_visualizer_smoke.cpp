@@ -134,6 +134,35 @@ TEST_F(VisualizerSmokeTest, ActiveCameraIndexCanBeUpdatedAtRuntime) {
   EXPECT_FALSE(bad.successful);
 }
 
+TEST_F(VisualizerSmokeTest, PoseAxisParamsHotToggle) {
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({
+      {"enable_pose_axes", false},  // start disabled
+  });
+  auto node = std::make_shared<perspective_grasp::VisualizerNode>(opts);
+
+  // Re-enable.
+  auto toggled = node->set_parameter(rclcpp::Parameter("enable_pose_axes", true));
+  EXPECT_TRUE(toggled.successful);
+
+  // Valid axis length update succeeds.
+  auto ok = node->set_parameter(rclcpp::Parameter("axis_length_m", 0.12));
+  EXPECT_TRUE(ok.successful);
+
+  // Non-positive axis length must be rejected.
+  auto bad_len = node->set_parameter(rclcpp::Parameter("axis_length_m", 0.0));
+  EXPECT_FALSE(bad_len.successful);
+  auto neg_len = node->set_parameter(rclcpp::Parameter("axis_length_m", -0.05));
+  EXPECT_FALSE(neg_len.successful);
+
+  // Thickness range is enforced.
+  auto thick_ok = node->set_parameter(rclcpp::Parameter("pose_axis_thickness", 4));
+  EXPECT_TRUE(thick_ok.successful);
+  auto thick_bad =
+      node->set_parameter(rclcpp::Parameter("pose_axis_thickness", 20));
+  EXPECT_FALSE(thick_bad.successful);
+}
+
 TEST(VisualizerComposeTopic, JoinsNamespaceAndSuffix) {
   // Test the public static helper indirectly via constructing a node and
   // reading the logged topic names is overkill — lean on the exposed method.

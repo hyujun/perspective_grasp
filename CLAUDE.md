@@ -69,6 +69,12 @@ retry blindly. Add a test / guard / fallback that encodes the missing constraint
      `live_gpu_phase0_prep.md` for Phase 4 weights/meshes/Docker changes.
    - **This `CLAUDE.md`** — if an invariant, sensor, escalation trigger, or anti-pattern
      became true or stale.
+   - **Memory** at `/home/junho/.claude/projects/-home-junho-ros2-ws-perspective-ws-src-perspective-grasp/memory/` —
+     refresh entries whose facts changed (paths, counts, dep status), and **delete** the
+     `.md` files for memories whose work is now complete or whose guidance is no longer
+     relevant. Keep `MEMORY.md` in sync (remove the pointer line for every deleted file;
+     never leave dangling entries). A memory that only restates what the current code or
+     docs already say is dead weight — drop it.
 
    Treat "docs unchanged" as a claim you must justify, not a default. If nothing needs
    updating, say so out loud in the commit/PR message. Never commit code + docs drift in

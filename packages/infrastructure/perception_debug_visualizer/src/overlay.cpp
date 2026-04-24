@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <string>
 
 namespace perspective_grasp::detail {
 
@@ -116,6 +118,134 @@ void draw_masks(cv::Mat& image,
               a * static_cast<float>(color[c]));
         }
       }
+    }
+  }
+}
+
+namespace {
+
+constexpr double kPoseAxisDepthEpsilon = 1e-4;
+constexpr int kPoseAxisMinThickness = 1;
+constexpr int kPoseAxisMaxThickness = 10;
+
+struct Vec3 { double x, y, z; };
+
+// Rotate a body-frame unit axis by a quaternion (x, y, z, w).
+// Derived from R = I + 2w[ω]× + 2[ω]×² applied to the canonical basis.
+Vec3 rotate_x_axis(double qx, double qy, double qz, double qw) {
+  return {1.0 - 2.0 * (qy * qy + qz * qz),
+          2.0 * (qx * qy + qw * qz),
+          2.0 * (qx * qz - qw * qy)};
+}
+Vec3 rotate_y_axis(double qx, double qy, double qz, double qw) {
+  return {2.0 * (qx * qy - qw * qz),
+          1.0 - 2.0 * (qx * qx + qz * qz),
+          2.0 * (qy * qz + qw * qx)};
+}
+Vec3 rotate_z_axis(double qx, double qy, double qz, double qw) {
+  return {2.0 * (qx * qz + qw * qy),
+          2.0 * (qy * qz - qw * qx),
+          1.0 - 2.0 * (qx * qx + qy * qy)};
+}
+
+cv::Point2d project(const Vec3& p, double fx, double fy, double cx, double cy) {
+  const double z = std::max(p.z, kPoseAxisDepthEpsilon);
+  return {fx * p.x / z + cx, fy * p.y / z + cy};
+}
+
+}  // namespace
+
+std::optional<ProjectedAxis> project_pose_axes(
+    const geometry_msgs::msg::Pose& pose_in_cam,
+    const std::array<double, 9>& K,
+    double axis_length_m,
+    int32_t track_id) {
+  if (axis_length_m <= 0.0) {
+    return std::nullopt;
+  }
+  const double fx = K[0];
+  const double fy = K[4];
+  const double cx = K[2];
+  const double cy = K[5];
+  if (fx <= 0.0 || fy <= 0.0) {
+    return std::nullopt;
+  }
+
+  const Vec3 origin{pose_in_cam.position.x, pose_in_cam.position.y,
+                    pose_in_cam.position.z};
+  if (origin.z <= kPoseAxisDepthEpsilon) {
+    return std::nullopt;
+  }
+
+  const double qx = pose_in_cam.orientation.x;
+  const double qy = pose_in_cam.orientation.y;
+  const double qz = pose_in_cam.orientation.z;
+  const double qw = pose_in_cam.orientation.w;
+
+  const Vec3 ux = rotate_x_axis(qx, qy, qz, qw);
+  const Vec3 uy = rotate_y_axis(qx, qy, qz, qw);
+  const Vec3 uz = rotate_z_axis(qx, qy, qz, qw);
+
+  const Vec3 tip_x{origin.x + axis_length_m * ux.x,
+                   origin.y + axis_length_m * ux.y,
+                   origin.z + axis_length_m * ux.z};
+  const Vec3 tip_y{origin.x + axis_length_m * uy.x,
+                   origin.y + axis_length_m * uy.y,
+                   origin.z + axis_length_m * uy.z};
+  const Vec3 tip_z{origin.x + axis_length_m * uz.x,
+                   origin.y + axis_length_m * uz.y,
+                   origin.z + axis_length_m * uz.z};
+
+  ProjectedAxis out;
+  out.origin = project(origin, fx, fy, cx, cy);
+  out.x_end = project(tip_x, fx, fy, cx, cy);
+  out.y_end = project(tip_y, fx, fy, cx, cy);
+  out.z_end = project(tip_z, fx, fy, cx, cy);
+  out.track_id = track_id;
+  return out;
+}
+
+void draw_pose_axes(cv::Mat& image,
+                    const std::vector<ProjectedAxis>& axes,
+                    int thickness) {
+  if (image.empty() || axes.empty()) {
+    return;
+  }
+  const int t = std::clamp(thickness, kPoseAxisMinThickness,
+                           kPoseAxisMaxThickness);
+  const cv::Rect bounds(0, 0, image.cols, image.rows);
+
+  auto to_point = [](const cv::Point2d& p) {
+    return cv::Point(static_cast<int>(std::lround(p.x)),
+                     static_cast<int>(std::lround(p.y)));
+  };
+
+  for (const auto& ax : axes) {
+    // BGR. X→red, Y→green, Z→blue. Matches RViz axis convention.
+    const std::array<std::pair<cv::Point2d, cv::Scalar>, 3> segs = {{
+        {ax.x_end, cv::Scalar(0, 0, 255)},
+        {ax.y_end, cv::Scalar(0, 255, 0)},
+        {ax.z_end, cv::Scalar(255, 0, 0)},
+    }};
+    for (const auto& [tip, color] : segs) {
+      cv::Point p1 = to_point(ax.origin);
+      cv::Point p2 = to_point(tip);
+      // cv::clipLine rewrites p1/p2 in place; returns false if segment is
+      // entirely outside the image bounds — skip in that case.
+      if (!cv::clipLine(bounds, p1, p2)) {
+        continue;
+      }
+      cv::line(image, p1, p2, color, t, cv::LINE_AA);
+    }
+
+    // Label with track id near origin (skip if origin far outside image).
+    const cv::Point origin_px = to_point(ax.origin);
+    if (bounds.contains(origin_px)) {
+      const std::string label = "#" + std::to_string(ax.track_id);
+      cv::putText(image, label,
+                  origin_px + cv::Point(6, -6),
+                  cv::FONT_HERSHEY_SIMPLEX, 0.4,
+                  cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
     }
   }
 }

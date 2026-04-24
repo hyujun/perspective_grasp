@@ -12,6 +12,9 @@ find_package(geometry_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(perception_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 
 # Overlay helpers — pure OpenCV drawing, testable without rclcpp
@@ -38,6 +41,9 @@ ament_target_dependencies(visualizer_core
   cv_bridge
   image_transport
   perception_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
 )
 target_link_libraries(visualizer_core overlay ${OpenCV_LIBRARIES})
 
