@@ -3,7 +3,7 @@
 
 perception_system:
   ros__parameters:
-    base_frame: "ur5e_base_link"
+    base_frame: "base"
 
     cameras:
       - id: 0

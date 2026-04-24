@@ -4,7 +4,7 @@
 
 perception_system:
   ros__parameters:
-    base_frame: "ur5e_base_link"
+    base_frame: "base"
 
     cameras:
       - id: 0
@@ -15,7 +15,7 @@ perception_system:
         resolution: "640x480"
         fps: 30
         sync_mode: 0          # 0=default (independent)
-        ee_frame: "ur5e_tool0"
+        ee_frame: "tool0"
         frame_id: "cam0_color_optical_frame"
 
       - id: 1
