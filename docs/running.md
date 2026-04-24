@@ -19,7 +19,7 @@ All commands below assume the workspace is built and all three layers are source
 
 ## Camera drivers
 
-Launch the camera driver **before** the perception stack, and make its namespace match the `namespace` field in your `camera_config*.yaml`. Phase 1 subscribes on relative topic names (`camera/color/image_raw`, `camera/depth/points`, `camera/depth/camera_info`) so they resolve under `perception_system.launch.py`'s `PushRosNamespace`. If the driver publishes on the wrong namespace — or on a different topic layout — subscriptions will never connect.
+Launch the camera driver **before** the perception stack, and make its namespace match the `namespace` field in your `camera_config*.yaml`. Phase 1 subscribes on relative topic names (`camera/color/image_raw`, `camera/depth/color/points`, `camera/depth/camera_info`) so they resolve under `perception_system.launch.py`'s `PushRosNamespace`. If the driver publishes on the wrong namespace — or on a different topic layout — subscriptions will never connect.
 
 Rule of thumb: `camera_config_1cam.yaml` (namespace `""`) → driver publishes in root. `camera_config.yaml` (namespaces `/cam0`, `/cam1`, `/cam2`) → one driver per camera, each under its own namespace.
 
@@ -31,11 +31,13 @@ The Phase 1 topic convention matches the RealSense driver's native layout — no
 
 ```bash
 ros2 launch realsense2_camera rs_launch.py \
-    camera_namespace:='' \
+    camera_namespace:=/ \
     camera_name:=camera \
     pointcloud.enable:=true \
     align_depth.enable:=true
 ```
+
+`camera_namespace:=/` puts the driver at root (topics `/camera/...`). `ros2 launch` rejects empty argument values, so `camera_namespace:=''` will fail — use `/` for the root namespace.
 
 **Multi-camera** — one driver per camera, namespace must match the YAML:
 

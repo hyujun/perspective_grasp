@@ -14,7 +14,7 @@ PclIcpPoseEstimator::PclIcpPoseEstimator(const rclcpp::NodeOptions& options)
     : Node("pcl_icp_pose_estimator", options) {
   // Declare parameters
   this->declare_parameter("detection_topic", "yolo/detections");
-  this->declare_parameter("cloud_topic", "/camera/depth/points");
+  this->declare_parameter("cloud_topic", "/camera/depth/color/points");
   this->declare_parameter("camera_info_topic", "/camera/depth/camera_info");
   this->declare_parameter("voxel_leaf_size", 0.003);
   this->declare_parameter("outlier_mean_k", 50);

@@ -25,7 +25,7 @@ This package provides the primary real-time pose estimation pipeline (Phase 1). 
 
 | | |
 |---|---|
-| **Subscribes** | `/{ns}/yolo/detections` (`DetectionArray`), `/camera/depth/points` (`PointCloud2`), `/camera/depth/camera_info` (`CameraInfo`) |
+| **Subscribes** | `/{ns}/yolo/detections` (`DetectionArray`), `/camera/depth/color/points` (`PointCloud2`), `/camera/depth/camera_info` (`CameraInfo`) |
 | **Publishes** | `/{ns}/yolo_tracker/raw_poses` (`PoseWithMetaArray`), `/{ns}/yolo_tracker/diagnostics` (`DiagnosticArray`) |
 | **TF Broadcast** | `object_{id}` in `camera_color_optical_frame` |
 

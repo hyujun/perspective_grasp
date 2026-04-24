@@ -2,7 +2,7 @@ yolo_pcl_cpp_tracker:
   ros__parameters:
     # Camera topics (relative — inherit node namespace via PushRosNamespace)
     detection_topic: yolo/detections
-    cloud_topic: camera/depth/points
+    cloud_topic: camera/depth/color/points
     camera_info_topic: camera/depth/camera_info
     camera_frame_id: camera_color_optical_frame
 
