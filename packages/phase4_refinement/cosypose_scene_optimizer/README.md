@@ -93,6 +93,8 @@ COSYPOSE_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
   docker compose -f docker/docker-compose.yml up cosypose
 ```
 
+> Detailed weights/meshes layout + happypose CLI download recipe: [docs/model_assets.md](../../../docs/model_assets.md).
+
 ### Multi-camera fan-out
 
 Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per camera declared in `perception_system.cameras`. Each instance gets its own namespace (`/cam0/`, `/cam1/`, …) with all its topics **and** its action server prefixed. See [CLAUDE.md](../../../CLAUDE.md).

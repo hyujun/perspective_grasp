@@ -86,6 +86,8 @@ FOUNDATIONPOSE_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
   docker compose -f docker/docker-compose.yml up foundationpose
 ```
 
+> Detailed weights/meshes layout + Google Drive download recipe: [docs/model_assets.md](../../../docs/model_assets.md).
+
 ### Multi-camera fan-out
 
 Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per camera declared in `perception_system.cameras`. Each instance gets its own namespace (`/cam0/`, `/cam1/`, …) with all its topics prefixed. This mirrors the pattern in `sam2_segmentor.launch.py` — see [CLAUDE.md](../../../CLAUDE.md) for the multi-camera convention.
