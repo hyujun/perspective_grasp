@@ -65,6 +65,12 @@ x-gpu-common: &gpu-common
     NVIDIA_DRIVER_CAPABILITIES: all
     ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
     RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+    # Cyclone DDS XML config — forwarded when the user exports it on the host.
+    # Unset (default) = Cyclone uses its built-in profile.
+    # Typical use: force localhost unicast peers for host↔container runs
+    # where multicast discovery works but UDP data transport silently
+    # drops (see packages/bringup/perception_bringup/config/cyclonedds_localhost.xml).
+    CYCLONEDDS_URI: ${CYCLONEDDS_URI:-}
 
 services:
   # -----------------------------------------------------------------------

@@ -61,6 +61,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-ros-base \
+        ros-jazzy-rmw-cyclonedds-cpp \
         python3-colcon-common-extensions \
         python3-pip \
         build-essential \
@@ -78,15 +79,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /etc/bash.bashrc
 
 # ---------------------------------------------------------------------------
-# Stage 2: msgs-builder — build perception_msgs so ML nodes can use them
+# Stage 2: msgs-builder — build perception_msgs + perception_launch_utils
+# so Phase 4 ML nodes get both the message definitions and the shared
+# Python launch helpers (config_path, declare_*_arg, fanout_lifecycle_nodes).
 # ---------------------------------------------------------------------------
 FROM ros-ml-base AS msgs-builder
 
 RUN mkdir -p /ws/src
 COPY packages/interfaces/perception_msgs /ws/src/perception_msgs
+COPY packages/infrastructure/perception_launch_utils /ws/src/perception_launch_utils
 
 RUN source /opt/ros/jazzy/setup.bash \
-    && cd /ws && colcon build --packages-select perception_msgs
+    && cd /ws && colcon build \
+        --packages-select perception_msgs perception_launch_utils
 
 # ---------------------------------------------------------------------------
 # Stage 3: ml-base — final image with compiled msgs

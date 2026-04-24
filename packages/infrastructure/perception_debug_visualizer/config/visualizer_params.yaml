@@ -5,6 +5,12 @@ perception_debug_visualizer:
     camera_namespaces: [""]
     image_topic_suffix: "camera/color/image_raw"
     detection_topic_suffix: "yolo/detections"
+    sam2_masks_suffix: "sam2/masks"
+    # SAM2 mask overlay. Hot-togglable:
+    #   ros2 param set /perception_debug_visualizer enable_sam2_masks false
+    #   ros2 param set /perception_debug_visualizer mask_alpha 0.6
+    enable_sam2_masks: true
+    mask_alpha: 0.4
     # Which camera (index into camera_namespaces) gets overlayed on /debug/image.
     # Hot-swap at runtime: `ros2 param set /perception_debug_visualizer active_camera_index 1`
     active_camera_index: 0
