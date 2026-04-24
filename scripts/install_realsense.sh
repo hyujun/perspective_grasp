@@ -1,9 +1,16 @@
 #!/bin/bash
 # =============================================================================
-# install_realsense.sh - Intel RealSense SDK 2.0 on Ubuntu 24.04
+# install_realsense.sh - Intel RealSense SDK 2.0 + ROS 2 wrapper on Ubuntu 24.04
 #
-# Installs the librealsense2 apt packages needed to run RealSense cameras as
-# RGB-D inputs for the perspective_grasp pipeline.
+# Installs the librealsense2 apt packages and the ROS 2 Jazzy wrapper needed
+# to run RealSense cameras as RGB-D inputs for the perspective_grasp pipeline.
+#
+# Verified end-state: this script is sufficient for
+#   ros2 launch realsense2_camera rs_launch.py \
+#       camera_namespace:='' \
+#       camera_name:=camera \
+#       pointcloud.enable:=true \
+#       align_depth.enable:=true
 #
 # Installs:
 #   - Build/runtime deps (libusb, libudev, GLFW, GTK, OpenGL)
@@ -11,6 +18,7 @@
 #   - librealsense2-udev-rules : userspace USB access permissions
 #   - librealsense2-utils      : realsense-viewer + demo tools
 #   - librealsense2-dev        : headers + libs for C++ consumers
+#   - ros-jazzy-realsense2-camera{,-msgs} + ros-jazzy-realsense2-description
 #   - /etc/modules-load.d/uvcvideo.conf : ensure uvcvideo is loaded at boot
 #
 # Skips (intentionally):
@@ -43,7 +51,7 @@ echo "============================================================"
 
 # ---- 1. System update + build deps ----
 echo ""
-echo "=== [1/7] System update + build dependencies ==="
+echo "=== [1/8] System update + build dependencies ==="
 sudo apt-get update
 sudo apt-get install -y \
     curl gnupg ca-certificates lsb-release software-properties-common \
@@ -53,7 +61,7 @@ sudo apt-get install -y \
 
 # ---- 2. Intel repo signing key ----
 echo ""
-echo "=== [2/7] Intel librealsense signing key ==="
+echo "=== [2/8] Intel librealsense signing key ==="
 # The .pgp file served at librealsense.intel.com does not reliably contain the
 # key that actually signs the noble Release file (apt reports NO_PUBKEY
 # FB0B24895113F120). Pull the key by ID from the Ubuntu keyserver instead,
@@ -78,7 +86,7 @@ echo "Installed key $REALSENSE_KEY_ID to $REALSENSE_KEYRING"
 
 # ---- 3. Add apt source ----
 echo ""
-echo "=== [3/7] Add librealsense apt source ==="
+echo "=== [3/8] Add librealsense apt source ==="
 CODENAME="$(lsb_release -cs)"
 REPO_LINE="deb [signed-by=/etc/apt/keyrings/librealsense.pgp] https://librealsense.intel.com/Debian/apt-repo ${CODENAME} main"
 echo "$REPO_LINE" | sudo tee /etc/apt/sources.list.d/librealsense.list > /dev/null
@@ -86,7 +94,7 @@ sudo apt-get update
 
 # ---- 4. Install SDK packages ----
 echo ""
-echo "=== [4/7] Install librealsense2 packages ==="
+echo "=== [4/8] Install librealsense2 packages ==="
 # Purge any DKMS module from earlier runs/manual installs. The out-of-tree
 # module tends to fail to build on noble's 6.x kernel, and — more importantly
 # for our target machines — it ships unsigned, so Secure Boot rejects it at
@@ -111,18 +119,43 @@ sudo apt-get install -y \
     librealsense2-utils \
     librealsense2-dev
 
-# ---- 5. Reload udev rules ----
+# ---- 5. Install ROS 2 Jazzy realsense wrapper ----
 echo ""
-echo "=== [5/7] Reload udev rules ==="
+echo "=== [5/8] Install ROS 2 Jazzy realsense wrapper ==="
+# The IntelRealSense/realsense-ros wrapper is published to the ROS 2 apt repo
+# (packages.ros.org), not to Intel's librealsense repo. Requires ROS 2 Jazzy
+# to already be installed — install_host.sh / install_dependencies.sh handle
+# that. We install:
+#   - ros-jazzy-realsense2-camera       : the rs_launch.py launch file +
+#                                         realsense2_camera_node binary that
+#                                         the user invokes via `ros2 launch`
+#   - ros-jazzy-realsense2-camera-msgs  : custom msgs the wrapper publishes
+#                                         (Metadata, RGBD, Extrinsics)
+#   - ros-jazzy-realsense2-description  : URDF/xacro for D400 series — used by
+#                                         multi_camera_calibration + RViz TF
+if [ ! -d /opt/ros/jazzy ]; then
+    echo "WARNING: /opt/ros/jazzy not found. Skipping ROS 2 wrapper install."
+    echo "         Run scripts/install_host.sh (or install ROS 2 Jazzy manually)"
+    echo "         and re-run this script to pick up the wrapper packages."
+else
+    sudo apt-get install -y \
+        ros-jazzy-realsense2-camera \
+        ros-jazzy-realsense2-camera-msgs \
+        ros-jazzy-realsense2-description
+fi
+
+# ---- 6. Reload udev rules ----
+echo ""
+echo "=== [6/8] Reload udev rules ==="
 # librealsense2-udev-rules ships 99-realsense-libusb.rules under
 # /lib/udev/rules.d/. Reload + retrigger so an already-plugged camera picks
 # up the new permissions without a replug.
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
-# ---- 6. Ensure uvcvideo autoloads at boot ----
+# ---- 7. Ensure uvcvideo autoloads at boot ----
 echo ""
-echo "=== [6/7] Ensure uvcvideo autoloads at boot ==="
+echo "=== [7/8] Ensure uvcvideo autoloads at boot ==="
 # Observed failure: after purging librealsense2-dkms on this system, plugging
 # in a D435i did NOT cause the kernel to autoload uvcvideo. /dev/video* was
 # missing and rs-enumerate-devices returned "No device detected". Running
@@ -149,9 +182,9 @@ else
     echo "         Check 'sudo dmesg | grep -i uvcvideo | tail -n 20' for clues."
 fi
 
-# ---- 7. Post-install sanity check ----
+# ---- 8. Post-install sanity check ----
 echo ""
-echo "=== [7/7] Post-install sanity check ==="
+echo "=== [8/8] Post-install sanity check ==="
 # Informational only — never fail the script from here, the user may not
 # have a camera plugged in yet.
 echo ""
@@ -179,12 +212,28 @@ else
 fi
 
 echo ""
+echo "--- ROS 2 wrapper (expect: rs_launch.py present) ---"
+RS_LAUNCH="/opt/ros/jazzy/share/realsense2_camera/launch/rs_launch.py"
+if [ -f "$RS_LAUNCH" ]; then
+    echo "Found $RS_LAUNCH"
+else
+    echo "MISSING $RS_LAUNCH — ros-jazzy-realsense2-camera not installed."
+fi
+
+echo ""
 echo "============================================================"
-echo " RealSense SDK install complete."
+echo " RealSense SDK + ROS 2 wrapper install complete."
 echo ""
 echo " Next steps:"
 echo "   1. Plug a RealSense camera into a USB 3.x port."
 echo "   2. Run 'realsense-viewer' to confirm depth + color streams."
+echo "   3. Source ROS 2 and launch the wrapper:"
+echo "        source /opt/ros/jazzy/setup.bash"
+echo "        ros2 launch realsense2_camera rs_launch.py \\"
+echo "            camera_namespace:='' \\"
+echo "            camera_name:=camera \\"
+echo "            pointcloud.enable:=true \\"
+echo "            align_depth.enable:=true"
 echo ""
 echo " Using the stock uvcvideo kernel driver (no DKMS, Secure Boot safe)."
 echo " If you later need the out-of-tree driver for UVC-metadata features,"
