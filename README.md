@@ -1,6 +1,6 @@
 # perspective_grasp
 
-RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulation. 17 ROS 2 packages across 5 pipeline phases, supporting 1–3 cameras via config-driven topology.
+RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulation. 18 ROS 2 packages across 5 pipeline phases, supporting 1–3 cameras via config-driven topology.
 
 > **Status.** Phase 1–3 (C++ perception, fusion, filtering) and infra are implemented. **All 5 Phase 4 ML nodes** (SAM2, FoundationPose, CosyPose, MegaPose, BundleSDF) are wired end-to-end with pluggable real+mock backends, dedicated Docker runtime stages, and multi-camera fan-out. SAM2 is live-verified on hardware; the other four are mock-smoke-tested — live GPU inference is pending user-side weights + Docker image builds. Phase 5 (`grasp_pose_planner`) ships an antipodal planner + `Hand10DoF` adapter (real 10-DoF preshape mapping still TODO).
 
@@ -12,6 +12,7 @@ RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulat
 | [docs/build.md](docs/build.md) | `build.sh`, single-package builds, Docker image rebuilds |
 | [docs/running.md](docs/running.md) | Launch by phase, 1/2/3-camera configs, Phase 4 in Docker, pipeline modes |
 | [docs/architecture.md](docs/architecture.md) | Topic / TF / QoS reference, design principles |
+| [docs/debugging.md](docs/debugging.md) | Symptom-driven pipeline debugging playbook (Phase 1–4, debug visualizer) |
 
 ## Repository layout
 
@@ -29,7 +30,7 @@ perspective_grasp/
     ├── phase3_filtering/         # pose_filter_cpp, pose_graph_smoother
     ├── phase4_refinement/        # foundationpose + sam2 + cosypose + megapose + bundlesdf (all shipping)
     ├── phase5_manipulation/      # grasp_pose_planner (antipodal planner + Hand10DoF adapter)
-    └── infrastructure/           # meta_controller, debug_visualizer, multi_camera_calibration
+    └── infrastructure/           # meta_controller, debug_visualizer, multi_camera_calibration, perception_launch_utils
 ```
 
 ## Architecture at a glance

@@ -1,12 +1,14 @@
 #!/bin/bash
 # =============================================================================
-# build.sh - Phased colcon build for perspective_grasp (17 packages)
+# build.sh - Phased colcon build for perspective_grasp (18 packages)
 #
 # Build order respects inter-package dependencies:
 #   1. perception_msgs                      (all packages depend on this)
 #   2. teaser_icp_hybrid_registrator        (C++ lib; yolo_pcl_cpp_tracker dep)
 #   3. cross_camera_associator + pcl_merge_node  (multi-camera fusion infra)
-#   4. All remaining packages               (parallel-safe)
+#   4. All remaining packages               (parallel-safe; includes the
+#                                            ament_python perception_launch_utils
+#                                            helper used by every launch file)
 #
 # Usage:
 #   ./build.sh                  # Full build (RelWithDebInfo)
@@ -153,6 +155,7 @@ if [ "$DO_TEST" = "1" ]; then
         pcl_merge_node \
         multi_camera_calibration \
         perception_meta_controller \
-        perception_debug_visualizer
+        perception_debug_visualizer \
+        perception_launch_utils
     colcon test-result --verbose || true
 fi

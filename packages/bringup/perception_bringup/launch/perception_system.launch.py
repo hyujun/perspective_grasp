@@ -12,26 +12,16 @@ When ``camera_config`` is empty, falls back to a single root-namespace camera
 (identical to ``camera_config_1cam.yaml``).
 """
 
-import importlib.util
-import os
-
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import GroupAction, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, PushRosNamespace
-from launch.actions import GroupAction
-from ament_index_python.packages import get_package_share_directory
 
-
-def _load_camera_config_loader():
-    path = os.path.join(
-        get_package_share_directory('perception_bringup'),
-        'launch', 'camera_config_loader.py')
-    spec = importlib.util.spec_from_file_location(
-        'perception_bringup_cc_loader', path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
-    return mod
+from perception_launch_utils import (
+    config_path,
+    declare_camera_config_arg,
+    load_config,
+)
 
 
 def _per_camera_nodes(ns: str, tracker_config: str):
@@ -60,22 +50,15 @@ def _per_camera_nodes(ns: str, tracker_config: str):
 
 
 def _spawn_nodes(context, *args, **kwargs):
-    loader = _load_camera_config_loader()
     camera_config = LaunchConfiguration('camera_config').perform(context)
-    cfg = loader.load_config(camera_config if camera_config else None)
+    cfg = load_config(camera_config if camera_config else None)
 
-    tracker_config = os.path.join(
-        get_package_share_directory('yolo_pcl_cpp_tracker'),
-        'config', 'tracker_params.yaml')
-    filter_config = os.path.join(
-        get_package_share_directory('pose_filter_cpp'),
-        'config', 'filter_params.yaml')
-    associator_config = os.path.join(
-        get_package_share_directory('cross_camera_associator'),
-        'config', 'associator_params.yaml')
-    smoother_config = os.path.join(
-        get_package_share_directory('pose_graph_smoother'),
-        'config', 'smoother_params.yaml')
+    tracker_config = config_path('yolo_pcl_cpp_tracker', 'tracker_params.yaml')
+    filter_config = config_path('pose_filter_cpp', 'filter_params.yaml')
+    associator_config = config_path(
+        'cross_camera_associator', 'associator_params.yaml')
+    smoother_config = config_path(
+        'pose_graph_smoother', 'smoother_params.yaml')
 
     actions = []
 
@@ -114,9 +97,10 @@ def _spawn_nodes(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'camera_config',
-            default_value='',
-            description='Path to camera_config*.yaml (empty = 1-cam fallback)'),
+        declare_camera_config_arg(
+            description=(
+                'Path to camera_config*.yaml (empty = 1-cam fallback)'
+            ),
+        ),
         OpaqueFunction(function=_spawn_nodes),
     ])

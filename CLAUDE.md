@@ -2,7 +2,7 @@
 
 ## Project Overview
 RGB-D camera-based 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation.
-**17 ROS 2 packages** across 5 phases + debug visualizer + multi-camera support + calibration + bringup.
+**18 ROS 2 packages** across 5 phases + debug visualizer + multi-camera support + calibration + bringup + shared launch helpers.
 
 **Current status**: C++ packages (Phase 1-3, fusion, infra) are implemented. Phase 1 has 29 gtest
 unit tests; Phase 2 adds another 69 gtest cases (8 binaries) across `cross_camera_associator` +
@@ -102,7 +102,7 @@ colcon test-result --verbose
 3. `cross_camera_associator` + `pcl_merge_node` (multi-camera infrastructure)
 4. All remaining packages (parallel safe)
 
-## Packages (17 total)
+## Packages (18 total)
 Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 - **Interfaces**: `perception_msgs` — 12 msgs, 1 srv (`SetMode`), 2 actions (`AnalyzeScene`, `PlanGrasp`)
 - **Bringup**: `perception_bringup` — system-level launches (`perception_system.launch.py`, `phase1_bringup.launch.py`) + shared `camera_config*.yaml`
@@ -111,7 +111,7 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 - **Phase 3 (Filtering)**: `pose_filter_cpp` (SE(3) IEKF, 35 gtests / 2 binaries; Q∝dt unit fix + diagnostics + fitness clamp landed 2026-04-19), `pose_graph_smoother` (optional GTSAM, 11 gtests / 2 binaries; passthrough preserves upstream frame_id — don't overwrite with `fallback_parent_frame`)
 - **Phase 4 (Refinement)**: all 5 shipping — `isaac_foundationpose_tracker`, `sam2_instance_segmentor` (live-verified), `cosypose_scene_optimizer` (LifecycleNode + `analyze_scene` action), `megapose_ros2_wrapper`, `bundlesdf_unknown_tracker`. Each has pluggable real+mock backends + dedicated Docker stage + multi-cam fan-out
 - **Phase 5 (Manipulation)**: `grasp_pose_planner` — antipodal planner + `Hand10DoF` adapter; finger-joint preshape mapping is a TODO
-- **Infra**: `perception_meta_controller`, `perception_debug_visualizer`, `multi_camera_calibration`
+- **Infra**: `perception_meta_controller`, `perception_debug_visualizer`, `multi_camera_calibration`, `perception_launch_utils` (Python helpers for every `launch.py` — `config_path`, `load_config`, `fanout_lifecycle_nodes`; 22 pytest cases)
 
 ## Code Conventions
 - **C++ Standard**: C++20 (`cxx_std_20`)
@@ -120,6 +120,7 @@ Grouped by `packages/<group>/<pkg>/` (colcon discovers recursively).
 - **Python build**: `ament_cmake_python` (for mixed packages) or `ament_python`
 - **Formatting**: clang-format (Google style with modifications)
 - **Namespace**: `perspective_grasp`
+- **Launch files**: import shared helpers from `perception_launch_utils` (`config_path`, `share_file`, `load_config`, `declare_{params_file,camera_config,autostart}_arg`, `fanout_lifecycle_nodes`). Don't reach for `os.path.join(get_package_share_directory(...), 'config', ...)` or hand-roll YAML parsing — both have one-call replacements. Add `<exec_depend>perception_launch_utils</exec_depend>` to the package.xml of any package whose launch files use them.
 
 ## Topic Naming
 
@@ -175,7 +176,7 @@ Guidance for Claude working in this repo. These supplement the top-level system 
 - **Multi-camera path is unified.** Never add `if N==1` branches in launch files / fusion code — the principle is a single code path parameterized by the camera config.
 - **GPU budget is a dev-time concern only.** The 8GB VRAM ceiling applies to this simulation PC, not to the production machine — don't treat it as a hard architectural constraint. When the user asks about running multiple ML nodes together, first clarify dev vs production before arguing VRAM limits.
 - **Related skills**: `init` / `claude-md-improver` (maintain this file), `review` / `security-review` (PR review), `simplify` (code review pass), `claude-api` (if touching ML nodes that call hosted models — none do today).
-- **Use `Agent` with `Explore` subagent** for broad "where is X used" queries across 17 packages. Direct `Grep`/`Glob` is fine for known symbols.
+- **Use `Agent` with `Explore` subagent** for broad "where is X used" queries across 18 packages. Direct `Grep`/`Glob` is fine for known symbols.
 - **User language**: User writes mixed Korean/English. Mirror the user's language in responses; keep technical identifiers (topic names, class names) in English regardless.
 
 ## Workspace Paths

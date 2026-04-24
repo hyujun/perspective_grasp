@@ -13,6 +13,8 @@
   <depend>std_msgs</depend>
   <depend>perception_msgs</depend>
 
+  <exec_depend>perception_launch_utils</exec_depend>
+
   <test_depend>ament_cmake_gtest</test_depend>
 
   <export>

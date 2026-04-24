@@ -1,175 +1,60 @@
 """Launch BundleSDF unknown-object tracker node(s).
 
-Two modes (same contract as ``foundationpose.launch.py`` /
-``sam2_segmentor.launch.py``):
+Two modes, dispatched by ``camera_config``:
 
-* **Single camera (default)** — no ``camera_config`` arg. Spawns one
-  ``bundlesdf_tracker`` LifecycleNode in the global namespace with
-  the topic defaults from ``config/bundlesdf_params.yaml``.
-* **Multi-camera (fan-out)** — ``camera_config:=/path/to/camera_config.yaml``.
-  Reads ``perception_system.cameras`` from the YAML and spawns one
-  LifecycleNode per camera, each namespaced under ``cam{id}`` with its
-  topics prefixed accordingly.
+* **Single camera (default)** — one ``bundlesdf_tracker`` LifecycleNode
+  in the global namespace with topics from ``config/bundlesdf_params.yaml``.
+* **Multi-camera (fan-out)** — one LifecycleNode per
+  ``perception_system.cameras`` entry, each namespaced under
+  ``cam{id}`` with topics prefixed.
 
-Each fan-out instance keeps its own per-track state; BundleSDF's
-neural SDFs are not shared across cameras.
+Each instance keeps its own per-track neural SDFs — they are not shared
+across cameras.
 
-``autostart`` (default ``true``) drives each LifecycleNode from
-``UNCONFIGURED`` → ``INACTIVE`` → ``ACTIVE`` automatically so the
-Docker entrypoint yields an active tracker without manual lifecycle
-commands.
+``autostart`` (default ``true``) drives each LifecycleNode
+``UNCONFIGURED → INACTIVE → ACTIVE`` so the Docker entrypoint yields an
+active tracker without manual lifecycle commands.
 """
 
 from __future__ import annotations
 
-import os
-from typing import Any
-
-import lifecycle_msgs.msg
-import yaml
-from ament_index_python.packages import get_package_share_directory
-from launch import LaunchContext, LaunchDescription
-from launch.actions import (
-    DeclareLaunchArgument,
-    EmitEvent,
-    OpaqueFunction,
-    RegisterEventHandler,
-)
-from launch.conditions import IfCondition
-from launch.events import matches_action
+from launch import LaunchDescription
+from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
+
+from perception_launch_utils import (
+    declare_autostart_arg,
+    declare_camera_config_arg,
+    declare_params_file_arg,
+    fanout_lifecycle_nodes,
+)
 
 
-def _default_params_file() -> str:
-    return os.path.join(
-        get_package_share_directory('bundlesdf_unknown_tracker'),
-        'config', 'bundlesdf_params.yaml')
-
-
-def _single_node(params_file: str) -> LifecycleNode:
-    return LifecycleNode(
+def _expand(context, *_args, **_kwargs):
+    return fanout_lifecycle_nodes(
         package='bundlesdf_unknown_tracker',
         executable='bundlesdf_node',
         name='bundlesdf_tracker',
-        namespace='',
-        parameters=[params_file],
-        output='screen',
-    )
-
-
-def _per_camera_node(
-    params_file: str, cam_id: int, namespace: str,
-) -> LifecycleNode:
-    ns = namespace.strip('/') if namespace else f'cam{cam_id}'
-    prefix = f'/{ns}'
-    overrides: dict[str, Any] = {
-        'image_topic':        f'{prefix}/camera/color/image_raw',
-        'depth_topic':        f'{prefix}/camera/depth/image_rect_raw',
-        'camera_info_topic':  f'{prefix}/camera/color/camera_info',
-        'masks_topic':        f'{prefix}/sam2/masks',
-        'poses_topic':        f'{prefix}/bundlesdf/raw_poses',
-    }
-    return LifecycleNode(
-        package='bundlesdf_unknown_tracker',
-        executable='bundlesdf_node',
-        name='bundlesdf_tracker',
-        namespace=ns,
-        parameters=[params_file, overrides],
-        output='screen',
-    )
-
-
-def _autostart_actions(node: LifecycleNode, autostart: LaunchConfiguration):
-    """Drive `node` UNCONFIGURED → INACTIVE → ACTIVE when autostart is true."""
-    cond = IfCondition(autostart)
-    configure = EmitEvent(
-        event=ChangeState(
-            lifecycle_node_matcher=matches_action(node),
-            transition_id=lifecycle_msgs.msg.Transition.TRANSITION_CONFIGURE,
+        params_file=LaunchConfiguration('params_file').perform(context),
+        camera_config_path=(
+            LaunchConfiguration('camera_config').perform(context)
         ),
-        condition=cond,
+        topic_overrides=lambda ns: {
+            'image_topic':        f'/{ns}/camera/color/image_raw',
+            'depth_topic':        f'/{ns}/camera/depth/image_rect_raw',
+            'camera_info_topic':  f'/{ns}/camera/color/camera_info',
+            'masks_topic':        f'/{ns}/sam2/masks',
+            'poses_topic':        f'/{ns}/bundlesdf/raw_poses',
+        },
+        autostart=LaunchConfiguration('autostart'),
     )
-    activate_on_inactive = RegisterEventHandler(
-        OnStateTransition(
-            target_lifecycle_node=node,
-            start_state='configuring',
-            goal_state='inactive',
-            entities=[
-                EmitEvent(event=ChangeState(
-                    lifecycle_node_matcher=matches_action(node),
-                    transition_id=(
-                        lifecycle_msgs.msg.Transition.TRANSITION_ACTIVATE
-                    ),
-                )),
-            ],
-        ),
-        condition=cond,
-    )
-    return [activate_on_inactive, configure]
-
-
-def _expand(context: LaunchContext, *_args, **_kwargs):
-    params_file = LaunchConfiguration('params_file').perform(context)
-    camera_config = LaunchConfiguration('camera_config').perform(context)
-    autostart = LaunchConfiguration('autostart')
-
-    if not camera_config:
-        nodes = [_single_node(params_file)]
-    else:
-        if not os.path.isfile(camera_config):
-            raise FileNotFoundError(f'camera_config not found: {camera_config}')
-
-        with open(camera_config, 'r') as f:
-            doc = yaml.safe_load(f) or {}
-        cameras = (
-            doc.get('perception_system', {})
-               .get('ros__parameters', {})
-               .get('cameras', [])
-        )
-        if not cameras:
-            raise ValueError(
-                f'{camera_config} has no perception_system.ros__parameters.cameras'
-            )
-
-        nodes = []
-        for cam in cameras:
-            cam_id = int(cam.get('id'))
-            namespace = cam.get('namespace', '') or ''
-            if not namespace:
-                nodes.append(_single_node(params_file))
-            else:
-                nodes.append(_per_camera_node(params_file, cam_id, namespace))
-
-    actions: list = []
-    for node in nodes:
-        actions.append(node)
-        actions.extend(_autostart_actions(node, autostart))
-    return actions
 
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'params_file',
-            default_value=_default_params_file(),
-            description='Path to bundlesdf_params.yaml'),
-        DeclareLaunchArgument(
-            'camera_config',
-            default_value='',
-            description=(
-                'Path to camera_config.yaml. When empty, spawns a single '
-                'node with default (non-namespaced) topics. Otherwise '
-                'spawns one node per entry in perception_system.cameras.'
-            )),
-        DeclareLaunchArgument(
-            'autostart',
-            default_value='true',
-            description=(
-                'Auto-drive the LifecycleNode(s) to ACTIVE on launch. '
-                'Set to false to manage the lifecycle externally.'
-            )),
+        declare_params_file_arg(
+            'bundlesdf_unknown_tracker', 'bundlesdf_params.yaml'),
+        declare_camera_config_arg(),
+        declare_autostart_arg(),
         OpaqueFunction(function=_expand),
     ])

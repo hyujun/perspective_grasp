@@ -1,15 +1,23 @@
-# perception_debug_visualizer — Debugging Guide
+# Pipeline Debugging
 
-Practical reference for using `perception_debug_visualizer` to diagnose the
-perception pipeline (Phase 1–3 fusion output + pipeline mode + per-camera
-streams).
+Symptom-driven playbook for diagnosing the perception pipeline end-to-end:
+Phase 1–3 host nodes, Phase 4 Docker ML nodes, fusion, mode control,
+per-camera streams, and the debug visualizer that ties them together.
 
-See also: `README.md` (package overview) and
-`packages/bringup/perception_bringup/config/camera_config*.yaml`.
+> This file used to live at
+> `packages/infrastructure/perception_debug_visualizer/docs/DEBUGGING.md`.
+> It was moved here because the playbook is workspace-wide — the debug
+> visualizer is just the primary tool you use to read the pipeline state.
+
+See also:
+- [running.md](running.md) — how to launch the pipeline and camera drivers
+- [architecture.md](architecture.md) — topic / TF / QoS reference
+- [perception_debug_visualizer README](../packages/infrastructure/perception_debug_visualizer/README.md) — node internals (parameters, subscribe topics, CMake targets)
+- `packages/bringup/perception_bringup/config/camera_config*.yaml` — source of truth for camera namespaces
 
 ---
 
-## 1. What the node does
+## 1. What the debug visualizer does
 
 Single fan-in debug visualizer. Subscribes to **all** configured cameras and
 republishes a BGR8 annotated image (bbox + mode + camera tag) for **one**
@@ -39,12 +47,7 @@ and `/yolo/detections` (no leading namespace segment).
 
 ## 2. Launch recipes
 
-All commands assume the workspace is sourced:
-
-```bash
-cd /home/junho/ros2_ws/perspective_ws
-source install/setup.bash
-```
+All commands assume the workspace is sourced (see [running.md](running.md#prerequisites)).
 
 ### 2.1 Single camera, node only
 
@@ -91,9 +94,8 @@ the previous index.
 
 ## 3. Integrating with the full system launch
 
-The package-level launch at
 `perception_bringup/launch/perception_system.launch.py` already parses
-`camera_config`. To run the full pipeline plus the visualizer in one shell:
+`camera_config`. To run the full pipeline plus the visualizer in one session:
 
 ```bash
 # Terminal 1 — pipeline
@@ -129,7 +131,8 @@ ros2 topic hz /cam0/camera/color/image_raw         # or whichever topic
 ros2 topic list | grep image_raw                   # is the driver publishing?
 ```
 
-- If topic list is empty → RealSense / camera driver not running.
+- If topic list is empty → RealSense / camera driver not running. See
+  [running.md § Camera drivers](running.md#camera-drivers).
 - If topic exists but `hz` reports `no new messages`:
   - Check QoS mismatch: `ros2 topic info -v <topic>`. Publisher must be
     `BEST_EFFORT` for the node to receive it (or change both to `RELIABLE`).
@@ -168,7 +171,8 @@ ros2 topic echo --once /pose_filter/filtered_poses
 ```
 
 If the smoother is silent but the filter is not, the smoother node probably
-didn't start — check `ros2 node list`.
+didn't start — check `ros2 node list`. Note that `pose_graph_smoother` is a
+LifecycleNode and needs to be driven to `ACTIVE` before it publishes.
 
 ### 4.6 Multi-camera: merged cloud not showing in RViz
 
@@ -194,6 +198,68 @@ ros2 param get /cross_camera_associator camera_namespaces
   publishing under (the `perception_system.launch.py` pipes the yaml list in
   automatically; confirm they match if you hand-launched).
 
+### 4.8 Phase 4 LifecycleNode stuck in UNCONFIGURED
+
+All Phase 4 launches (`sam2`, `foundationpose`, `cosypose`, `megapose`,
+`bundlesdf`) ship with `autostart:=true` by default, which drives the node
+`UNCONFIGURED → INACTIVE → ACTIVE` automatically. If the node stays in
+`UNCONFIGURED`:
+
+```bash
+# Lifecycle state check
+ros2 lifecycle get /foundationpose_tracker
+ros2 lifecycle nodes                         # all lifecycle nodes in the graph
+
+# If Docker-hosted, tail the entrypoint log to see the configure error
+docker compose -f docker/docker-compose.yml logs -f foundationpose
+```
+
+Most common causes:
+- **Weights / meshes missing** — the `on_configure` callback fails when the
+  model directory mount is empty. Confirm the host path (`$FOUNDATIONPOSE_WEIGHTS`
+  etc.) exists and the expected files are there. See
+  [running.md § Phase 4](running.md#phase-4-ml-nodes-docker).
+- **`autostart:=false` was set** explicitly — drive it manually:
+  `ros2 lifecycle set /foundationpose_tracker configure` then `activate`.
+
+### 4.9 Phase 4 node runs but host doesn't see its topics
+
+Docker containers use `network_mode: host` + `ipc: host` so DDS traffic
+shares the host graph, but the container user needs matching `ROS_DOMAIN_ID`
+(and optionally `RMW_IMPLEMENTATION`) with the host:
+
+```bash
+# On the host
+echo "$ROS_DOMAIN_ID"  "$RMW_IMPLEMENTATION"
+
+# Inside the container
+docker exec -it <service> bash -c 'echo "$ROS_DOMAIN_ID" "$RMW_IMPLEMENTATION"'
+
+# From the host, confirm the ML node is actually on the graph
+ros2 node list | grep -E "foundationpose|sam2|cosypose|megapose|bundlesdf"
+ros2 topic list | grep -E "sam2|foundationpose|cosypose|megapose|bundlesdf"
+```
+
+If the lists are empty but `docker compose logs` shows the node spinning,
+mismatched `ROS_DOMAIN_ID` is almost always the culprit. See the Docker
+gotchas notes in the workspace memory / `docs/installation.md`.
+
+### 4.10 Fan-out launched but only one camera's node appears
+
+All five Phase 4 launches accept `camera_config:=<path>` and spawn one
+LifecycleNode per `perception_system.cameras` entry.
+
+```bash
+ros2 node list | grep sam2_segmentor              # should list /cam0/sam2_segmentor, /cam1/sam2_segmentor, ...
+ros2 topic list | grep -E "/cam[0-9]+/sam2/masks" # one per camera
+```
+
+- If only the root-namespace node shows up: confirm `camera_config:=` was
+  passed — an empty value triggers the 1-cam fallback path.
+- If the namespaces differ from the `perception_system.launch.py` tree, the
+  two launches were given different `camera_config` files. Always pass the
+  same yaml to both.
+
 ---
 
 ## 5. Quick diagnostic commands
@@ -218,32 +284,42 @@ ros2 param list /perception_debug_visualizer
 ros2 param get  /perception_debug_visualizer camera_namespaces
 ros2 param get  /perception_debug_visualizer active_camera_index
 
+# Lifecycle (Phase 3 smoother + all Phase 4 ML nodes)
+ros2 lifecycle nodes
+ros2 lifecycle get /foundationpose_tracker
+ros2 lifecycle set /pose_graph_smoother activate
+
 # TF
 ros2 run tf2_tools view_frames
 ros2 run tf2_ros tf2_echo ur5e_base_link cam0_color_optical_frame
+
+# Docker-hosted Phase 4 nodes
+docker compose -f docker/docker-compose.yml ps
+docker compose -f docker/docker-compose.yml logs -f <service>
 ```
 
 ---
 
-## 6. Customization pointers
+## 6. Customization pointers (debug visualizer)
 
 | Want to change                 | Edit                                              |
 |--------------------------------|---------------------------------------------------|
-| Default image topic suffix     | `config/visualizer_params.yaml: image_topic_suffix` |
-| Detection topic suffix         | `config/visualizer_params.yaml: detection_topic_suffix` |
-| Bbox / mode font size & color  | `src/overlay.cpp` (constants at top of the file)  |
-| RViz displays                  | `rviz/debug_view.rviz`                            |
-| Launch GUI layout              | `launch/debug_visualizer.launch.py`               |
+| Default image topic suffix     | `packages/infrastructure/perception_debug_visualizer/config/visualizer_params.yaml: image_topic_suffix` |
+| Detection topic suffix         | `packages/infrastructure/perception_debug_visualizer/config/visualizer_params.yaml: detection_topic_suffix` |
+| Bbox / mode font size & color  | `packages/infrastructure/perception_debug_visualizer/src/overlay.cpp` (constants at top of the file) |
+| RViz displays                  | `packages/infrastructure/perception_debug_visualizer/rviz/debug_view.rviz` |
+| Launch GUI layout              | `packages/infrastructure/perception_debug_visualizer/launch/debug_visualizer.launch.py` |
 
 If you need additional overlays (e.g. smoothed-pose 2D projection, track-id
 labels, mask contours from SAM2), extend `detail::draw_*` in
-[`overlay.cpp`](../src/overlay.cpp) and call it from `image_callback` in
-[`visualizer_node.cpp`](../src/visualizer_node.cpp) — the per-camera cache of
-the latest message is already available there.
+[`overlay.cpp`](../packages/infrastructure/perception_debug_visualizer/src/overlay.cpp)
+and call it from `image_callback` in
+[`visualizer_node.cpp`](../packages/infrastructure/perception_debug_visualizer/src/visualizer_node.cpp) —
+the per-camera cache of the latest message is already available there.
 
 ---
 
-## 7. Known limitations
+## 7. Known limitations of the debug visualizer
 
 - Only one camera's image is republished at a time. Running 3 visualizer
   instances for side-by-side comparison works but consumes 3× CPU. A future

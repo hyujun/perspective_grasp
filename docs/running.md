@@ -247,7 +247,35 @@ ros2 action send_goal /plan_grasp perception_msgs/action/PlanGrasp \
   "{target_object_id: 0, grasp_strategy: 'power'}"
 ```
 
+## Authoring new launch files
+
+All `launch.py` files in this workspace import shared helpers from
+[`perception_launch_utils`](../packages/infrastructure/perception_launch_utils/README.md).
+Use them instead of hand-rolling `os.path.join(get_package_share_directory(...))` blocks
+or copy-pasting `OpaqueFunction + yaml.safe_load + per-camera LifecycleNode` boilerplate.
+
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from perception_launch_utils import config_path
+
+def generate_launch_description():
+    return LaunchDescription([
+        Node(
+            package='my_pkg',
+            executable='my_node',
+            parameters=[config_path('my_pkg')],   # <pkg>_params.yaml by default
+            output='screen',
+        ),
+    ])
+```
+
+Add `<exec_depend>perception_launch_utils</exec_depend>` to the package's `package.xml`.
+For multi-camera fan-out, see `fanout_lifecycle_nodes(...)` in the
+[helper README](../packages/infrastructure/perception_launch_utils/README.md).
+
 ## Next
 
 - [architecture.md](architecture.md) — topic / TF / QoS reference
 - [build.md](build.md) — rebuild after code changes
+- [debugging.md](debugging.md) — symptom-driven debugging playbook when something doesn't come up

@@ -13,6 +13,7 @@
   <exec_depend>pose_filter_cpp</exec_depend>
   <exec_depend>cross_camera_associator</exec_depend>
   <exec_depend>pcl_merge_node</exec_depend>
+  <exec_depend>perception_launch_utils</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

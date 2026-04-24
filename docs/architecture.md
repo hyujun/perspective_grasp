@@ -55,7 +55,7 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
   Calibration:   multi_camera_calibration    (ChArUco + hand-eye + Ceres)
 ```
 
-## Packages (17 total)
+## Packages (18 total)
 
 | Group | Package | Language |
 |-------|---------|----------|
@@ -76,6 +76,21 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
 | Infra | [perception_meta_controller](../packages/infrastructure/perception_meta_controller/) | C++ |
 | Infra | [perception_debug_visualizer](../packages/infrastructure/perception_debug_visualizer/) | C++ |
 | Infra | [multi_camera_calibration](../packages/infrastructure/multi_camera_calibration/) | C++ / Python |
+| Infra | [perception_launch_utils](../packages/infrastructure/perception_launch_utils/) | Python |
+
+### Launch helpers — `perception_launch_utils`
+
+Every `launch.py` in this workspace imports from `perception_launch_utils` for three concerns:
+
+| Helper | Replaces |
+|--------|----------|
+| `config_path(pkg, filename=None)` | `os.path.join(get_package_share_directory(pkg), 'config', filename)` |
+| `share_file(pkg, *parts)` | The same pattern for non-`config/` resources (rviz, meshes...) |
+| `declare_params_file_arg`, `declare_camera_config_arg`, `declare_autostart_arg` | The boilerplate `DeclareLaunchArgument` stanzas |
+| `load_config(path)` → `PerceptionSystemConfig` | The old `importlib`-based `camera_config_loader.py` shim from `perception_bringup` |
+| `fanout_lifecycle_nodes(...)` | The ~140-line `OpaqueFunction + yaml.safe_load + per-camera LifecycleNode + autostart event wiring` block that used to be copy-pasted across the five Phase 4 launch files |
+
+See [perception_launch_utils/README.md](../packages/infrastructure/perception_launch_utils/README.md) for the full API and migration examples.
 
 ## Topic reference
 

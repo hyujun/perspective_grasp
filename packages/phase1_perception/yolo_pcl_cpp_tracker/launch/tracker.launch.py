@@ -1,9 +1,12 @@
 """Launch YOLO ByteTrack detector + PCL ICP pose estimator."""
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
-import os
+
+from perception_launch_utils import config_path
 
 
 def _default_models_dir(anchor_pkg: str) -> str:
@@ -22,10 +25,6 @@ def _default_models_dir(anchor_pkg: str) -> str:
 
 
 def generate_launch_description():
-    pkg_dir = get_package_share_directory('yolo_pcl_cpp_tracker')
-    config = os.path.join(pkg_dir, 'config', 'tracker_params.yaml')
-    models_dir = _default_models_dir('yolo_pcl_cpp_tracker')
-
     return LaunchDescription([
         # Python YOLO + ByteTrack node
         Node(
@@ -35,7 +34,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'model_path': 'yolov8n.pt',
-                'models_dir': models_dir,
+                'models_dir': _default_models_dir('yolo_pcl_cpp_tracker'),
                 'confidence_threshold': 0.5,
                 'image_topic': '/camera/color/image_raw',
             }],
@@ -45,7 +44,8 @@ def generate_launch_description():
             package='yolo_pcl_cpp_tracker',
             executable='pcl_icp_pose_estimator',
             name='pcl_icp_pose_estimator',
-            parameters=[config],
+            parameters=[config_path(
+                'yolo_pcl_cpp_tracker', 'tracker_params.yaml')],
             output='screen',
         ),
     ])

@@ -8,7 +8,7 @@ Consolidates visualization of object detections, smoothed poses, and pipeline st
 
 Multi-camera aware: subscribes to **all** cameras listed in a `perception_bringup` `camera_config*.yaml` and republishes a single overlayed image for the `active_camera_index` camera. Hot-swap via `ros2 param set`.
 
-**See [`docs/DEBUGGING.md`](docs/DEBUGGING.md) for launch recipes and a symptom-driven debugging playbook.**
+**See [`docs/debugging.md`](../../../docs/debugging.md) at the workspace root for launch recipes and a symptom-driven pipeline debugging playbook.**
 
 ## Node
 
