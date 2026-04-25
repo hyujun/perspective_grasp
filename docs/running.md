@@ -135,6 +135,8 @@ ros2 launch multi_camera_calibration calibration_collect.launch.py
 
 Phase 4 services run in GPU containers defined in [docker/docker-compose.yml](../docker/docker-compose.yml). They share `network_mode: host` + `ipc: host`, so topics appear on the same DDS graph as the host nodes.
 
+**Host↔container DDS lockstep:** containers default to Cyclone DDS with the localhost-peers XML (compose hardcodes both `RMW_IMPLEMENTATION` and `CYCLONEDDS_URI` to in-container paths). Host shells must match — source `<repo>/.env.live` once per terminal to set ROS sourcing + Cyclone env in one shot. Sensor-sized messages (Image, DetectionArray) silently drop without this lockstep — see [debugging.md § 4.9](debugging.md) for symptoms.
+
 ```bash
 cd ~/ros2_ws/perspective_ws/src/perspective_grasp
 

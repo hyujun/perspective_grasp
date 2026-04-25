@@ -64,13 +64,18 @@ x-gpu-common: &gpu-common
     NVIDIA_VISIBLE_DEVICES: all
     NVIDIA_DRIVER_CAPABILITIES: all
     ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-    RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
-    # Cyclone DDS XML config — forwarded when the user exports it on the host.
-    # Unset (default) = Cyclone uses its built-in profile.
-    # Typical use: force localhost unicast peers for host↔container runs
-    # where multicast discovery works but UDP data transport silently
-    # drops (see packages/bringup/perception_bringup/config/cyclonedds_localhost.xml).
-    CYCLONEDDS_URI: ${CYCLONEDDS_URI:-}
+    # Default to Cyclone DDS — matches the host-side .env.live and the
+    # CYCLONEDDS_URI hardcoded below. Host↔container runs require RMW
+    # parity (Fast DDS host + Cyclone container = silent disconnect).
+    # Override per-shell via `RMW_IMPLEMENTATION=... docker compose up <svc>`.
+    RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+    # Cyclone DDS XML config — point at the in-container mount, NOT the host
+    # path. The XML lives in packages/bringup/perception_bringup/config/, which
+    # every service mounts read-only at /ws/config. Forwarding the host's
+    # CYCLONEDDS_URI verbatim would inject a host filesystem path the
+    # container can't open, so we hardcode the container-side path here.
+    # Harmless under Fast DDS (the var is ignored when RMW != cyclonedds).
+    CYCLONEDDS_URI: file:///ws/config/cyclonedds_localhost.xml
 
 services:
   # -----------------------------------------------------------------------
