@@ -208,6 +208,15 @@ n. **Phase 1 `cloud_topic` defaulting to `camera/depth/points`** — Symptom: 1-
    reference `camera/depth/points` — confirm with the user before assuming phase 2 needs
    the same fix (multi-camera path not yet live-verified).
 
+o. **`perception_launch_utils` missing after partial build** — Symptom: `colcon build
+   --packages-select <some_consumer>` succeeds but `ros2 launch <consumer> ...` fails with
+   `ModuleNotFoundError: perception_launch_utils`. Cause: 15 packages declare it as
+   `exec_depend` only — colcon's topo sort therefore does NOT pull it in for `--packages-select`
+   builds, and Phase 4 of `build.sh` used to be where it eventually got built. Detection:
+   `ls install/perception_launch_utils/` after a partial build. Recovery: `build.sh` Phase 1
+   builds it eagerly alongside `perception_msgs` (git log: `9c49b34`); for ad-hoc selects,
+   add it explicitly: `colcon build --packages-select perception_launch_utils <consumer>`.
+
 ## 7. Where Things Live (mental map)
 
 Detailed package table: [docs/architecture.md#packages-18-total](./docs/architecture.md#packages-18-total).

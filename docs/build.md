@@ -60,7 +60,7 @@ colcon build --packages-select pose_filter_cpp
 colcon build --packages-select grasp_pose_planner
 ```
 
-> Only fall back to `build.sh` when you touch `perception_msgs` or `teaser_icp_hybrid_registrator` (everything downstream needs rebuilding), or when you add a new package.
+> Only fall back to `build.sh` when you touch `perception_msgs`, `perception_launch_utils`, or `teaser_icp_hybrid_registrator` (everything downstream needs rebuilding), or when you add a new package.
 
 ## Tests
 
