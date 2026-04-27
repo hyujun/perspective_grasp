@@ -7,7 +7,7 @@ Host setup for `perspective_grasp`. The workspace uses a **host + Docker hybrid*
 | Item | Requirement |
 |------|-------------|
 | OS | Ubuntu 24.04 |
-| GPU | NVIDIA GPU + driver 560+ (the host does **not** need a CUDA toolkit — each Phase 4 Docker stage bundles CUDA 12.6) |
+| GPU | NVIDIA GPU + driver ≥560 (installed via `ubuntu-drivers autoinstall`; the host does **not** need a CUDA toolkit — each Phase 4 Docker stage bundles CUDA 12.6) |
 | ROS 2 | Jazzy Jalisco |
 | Docker | Required only for Phase 4 ML nodes |
 | Workspace path | Any colcon workspace; this repo lives at `${ROS2_WS}/src/perspective_grasp/` |
@@ -42,15 +42,18 @@ chmod +x scripts/install_host.sh
 ./scripts/install_host.sh
 ```
 
-The script is idempotent and covers 7 steps:
+The script is idempotent and refuses to run as root. It covers 8 steps:
 
-1. NVIDIA driver 560+ (reboot required after install — re-run the script once up)
-2. ROS 2 Jazzy Desktop + rosdep
-3. ROS 2 apt packages + system C++ libs (rclcpp/rclpy, tf2, cv_bridge, image_transport, PCL, Eigen3, OpenCV, Ceres, openmpi)
+0. Enable apt `universe` (nvidia-driver / libpcl-dev / libceres-dev live there) + base tools
+1. NVIDIA driver ≥560 via `ubuntu-drivers autoinstall` (the script lets ubuntu-drivers pick the recommended variant for the GPU; reboot required after install — re-run the script once up)
+2. ROS 2 Jazzy Desktop, registered via the canonical `ros2-apt-source` deb (handles upstream key rotations automatically) + rosdep
+3. ROS 2 apt packages + system C++ libs (rclcpp/rclpy, **rmw-cyclonedds-cpp**, tf2, cv_bridge, image_transport, PCL, Eigen3, OpenCV, Ceres, openmpi)
 4. C++ libs from source (TEASER++, manif, GTSAM 4.2.0)
-5. Host Python venv at `${ROS2_WS}/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt)
+5. Host Python venv at `${ROS2_WS}/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt) (pip runs with `--no-user` to keep transitive deps inside the venv — see memory note `pip_venv_shadow_trap`)
 6. Docker + `nvidia-container-toolkit`
 7. Model-weights directory scaffold under `models/<service>/`
+
+> The Cyclone DDS RMW (`ros-jazzy-rmw-cyclonedds-cpp`) is **required** even though no package.xml lists it: the runtime forces `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` via `.env.live` to lockstep with the Phase 4 Docker containers. Without it, every host-side `ros2` command exits with "RMW implementation 'rmw_cyclonedds_cpp' is not installed" (CLAUDE.md anti-pattern (m)).
 
 > The host CUDA toolkit (`nvcc`) is **not** installed. Each Phase 4 Docker stage bundles its own CUDA 12.6 — the host only needs the driver.
 >

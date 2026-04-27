@@ -47,6 +47,15 @@
 # =============================================================================
 set -euo pipefail
 
+# Refuse to run as root — sudo is invoked per command. Running the whole
+# script under sudo creates root-owned tmp files and confuses udevadm/modprobe
+# state (those need the real user's environment to print useful diagnostics).
+if [ "$EUID" -eq 0 ]; then
+    echo "ERROR: do not run install_realsense.sh as root or via sudo." >&2
+    echo "       Run as your normal user — sudo is invoked per command." >&2
+    exit 1
+fi
+
 # Resolve repo root from this script's location so the trailing instructions
 # print absolute paths that are correct on whatever workspace layout the
 # operator chose. scripts/ -> perspective_grasp/.
@@ -146,6 +155,14 @@ if [ ! -d /opt/ros/jazzy ]; then
     echo "WARNING: /opt/ros/jazzy not found. Skipping ROS 2 wrapper install."
     echo "         Run scripts/install_host.sh (or install ROS 2 Jazzy manually)"
     echo "         and re-run this script to pick up the wrapper packages."
+elif ! apt-cache policy ros-jazzy-realsense2-camera 2>/dev/null | grep -qE '^\s*Candidate:\s*[^(]'; then
+    # Directory exists but the ROS 2 apt source isn't registered (e.g.
+    # /opt/ros/jazzy was extracted manually, or the apt source got removed).
+    # Without this guard `apt-get install ros-jazzy-realsense2-camera` fails
+    # with an unhelpful "Unable to locate package" — flag it explicitly.
+    echo "WARNING: ros-jazzy-realsense2-camera not in apt cache."
+    echo "         The ROS 2 apt source (packages.ros.org) appears to be missing."
+    echo "         Run scripts/install_host.sh to register it, then re-run this script."
 else
     sudo apt-get install -y \
         ros-jazzy-realsense2-camera \

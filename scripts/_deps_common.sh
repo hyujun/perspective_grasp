@@ -32,6 +32,17 @@ install_ros_apt_deps() {
     #   - package.xml `libpcl-all-dev` (rosdep key) → apt `libpcl-dev`
     #   - package.xml `eigen` (rosdep key)          → apt `libeigen3-dev`
     # The apt names below are what dpkg ships on Ubuntu 24.04 noble.
+    #
+    # rmw_cyclonedds_cpp is NOT a package.xml dep (no node imports it directly)
+    # but the runtime forces RMW_IMPLEMENTATION=rmw_cyclonedds_cpp via .env.live
+    # to lockstep with the Phase 4 Docker containers (anti-pattern (m) in
+    # CLAUDE.md). ros-jazzy-desktop ships Fast DDS only — without the cyclone
+    # RMW package every `ros2` command on the host fails with "RMW
+    # implementation 'rmw_cyclonedds_cpp' is not installed."
+    #
+    # universe must be enabled (libpcl-dev / libceres-dev / libopenmpi-dev /
+    # nvidia-driver-* live there). install_host.sh enables it before this
+    # function runs; install_dependencies.sh assumes the host already has it.
     sudo apt update
     sudo apt install -y \
         python3-colcon-common-extensions \
@@ -43,6 +54,7 @@ install_ros_apt_deps() {
         ros-jazzy-rclcpp \
         ros-jazzy-rclcpp-lifecycle \
         ros-jazzy-rclpy \
+        ros-jazzy-rmw-cyclonedds-cpp \
         ros-jazzy-std-msgs \
         ros-jazzy-sensor-msgs \
         ros-jazzy-sensor-msgs-py \
@@ -145,6 +157,18 @@ install_host_python() {
     # Pinned via scripts/requirements-host.txt. numpy<2 keeps the venv aligned
     # with apt's numpy 1.26.4 (cv_bridge ABI). Skip opencv-python: use apt's
     # python3-opencv / cv_bridge's bundled cv2.
-    pip install --upgrade -r "$_COMMON_SCRIPT_DIR/requirements-host.txt"
+    #
+    # --no-user is load-bearing: with --system-site-packages and PEP 668 on
+    # noble, pip can opportunistically route transitive deps into ~/.local
+    # instead of the venv (memory: pip_venv_shadow_trap.md). Forcing --no-user
+    # keeps every install inside <ws>/.venv where uninstall semantics match.
+    #
+    # Caveat: --no-user only fixes future installs. Pre-existing pollution
+    # under ~/.local/lib/python3.12/site-packages still shadows the venv via
+    # --system-site-packages, so a host with prior `pip install --user`
+    # history may need manual cleanup (look for unexpected versions of
+    # numpy/torch in `python -c 'import X; print(X.__file__)'` and rm by
+    # hand). Fresh PCs are unaffected.
+    pip install --no-user --upgrade -r "$_COMMON_SCRIPT_DIR/requirements-host.txt"
     pip uninstall -y opencv-python >/dev/null 2>&1 || true
 }
