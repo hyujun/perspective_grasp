@@ -35,7 +35,7 @@ source .venv/bin/activate
 
 | # | Packages | Why |
 |---|----------|-----|
-| 1 | `perception_msgs` | All packages depend on custom messages/actions |
+| 1 | `perception_msgs`, `perception_launch_utils` | All packages depend on the custom messages/actions; every launch file imports from `perception_launch_utils`. Built in parallel — both are leaves of the dep graph. |
 | 2 | `teaser_icp_hybrid_registrator` | C++ library consumed by `yolo_pcl_cpp_tracker` |
 | 3 | `cross_camera_associator`, `pcl_merge_node` | Multi-camera fusion infrastructure |
 | 4 | Everything else | Parallel-safe |

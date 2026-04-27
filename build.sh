@@ -3,12 +3,13 @@
 # build.sh - Phased colcon build for perspective_grasp (18 packages)
 #
 # Build order respects inter-package dependencies:
-#   1. perception_msgs                      (all packages depend on this)
+#   1. perception_msgs + perception_launch_utils  (parallel; both are leaves of
+#                                                  the dep graph and every other
+#                                                  package needs them at build
+#                                                  or launch time)
 #   2. teaser_icp_hybrid_registrator        (C++ lib; yolo_pcl_cpp_tracker dep)
 #   3. cross_camera_associator + pcl_merge_node  (multi-camera fusion infra)
-#   4. All remaining packages               (parallel-safe; includes the
-#                                            ament_python perception_launch_utils
-#                                            helper used by every launch file)
+#   4. All remaining packages               (parallel-safe)
 #
 # Usage:
 #   ./build.sh                  # Full build (RelWithDebInfo)
@@ -99,9 +100,13 @@ phase() {
     echo "    done in $((SECONDS - t0))s"
 }
 
-# ---- Phase 1: Message definitions (all packages depend on this) ----
-phase "[1/4] perception_msgs" \
-    colcon build --packages-select perception_msgs \
+# ---- Phase 1: Leaf deps (every other package needs these at build or launch
+#               time). perception_launch_utils is exec_depend-only today, so
+#               colcon's topo sort doesn't force it before Phase 4 — we build
+#               it here so partial `--packages-select` builds and launches
+#               downstream don't trip on a missing helper. ----
+phase "[1/4] perception_msgs + perception_launch_utils" \
+    colcon build --packages-select perception_msgs perception_launch_utils \
         --cmake-args "$CMAKE_ARGS" \
         --parallel-workers "$PARALLEL_JOBS"
 # shellcheck disable=SC1091
@@ -127,6 +132,7 @@ source install/setup.bash
 phase "[4/4] Remaining packages" \
     colcon build --packages-skip \
         perception_msgs \
+        perception_launch_utils \
         teaser_icp_hybrid_registrator \
         cross_camera_associator \
         pcl_merge_node \
