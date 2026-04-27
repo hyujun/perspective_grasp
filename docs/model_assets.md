@@ -15,6 +15,8 @@
 
 전제: `install_host.sh` 가 이미 실행되어 `<repo>/models/{foundationpose,happypose,megapose/meshes,sam2,bundlesdf}/` 가 존재한다. 다른 디스크에 두려면 §3 환경변수.
 
+> 경로 표기: `${ROS2_WS}` 는 **사용자의** colcon workspace root (`build/`, `install/`, `log/`, `.venv/` 가 만들어지는 폴더). 이 repo는 `${ROS2_WS}/src/perspective_grasp/` 에 clone되어 있다고 전제 — 자세한 건 [installation.md § Workspace layout](./installation.md#workspace-layout). 아래 명령은 그대로 paste되도록 `${ROS2_WS}` 를 사용한다 (`export ROS2_WS=...` 또는 직접 치환).
+
 ---
 
 ## 1. 컨테이너 마운트 계약
@@ -129,7 +131,7 @@ export BUNDLESDF_WEIGHTS=${MODELS_ROOT}/bundlesdf
 Meta FAIR 공식 배포. 인증/쿼터 없음.
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp/models/sam2
+cd ${ROS2_WS}/src/perspective_grasp/models/sam2
 wget https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt
 ls -lh sam2_hiera_large.pt        # ~900MB 확인
 ```
@@ -145,7 +147,7 @@ NVlabs 공식 Google Drive에서만 제공. 두 디렉토리 (`2023-10-28-18-33-
 3. `2024-01-11-20-02-45/model_best.pth` 다운로드
 4. 리네임 + 배치:
    ```bash
-   cd ~/ros2_ws/perspective_ws/src/perspective_grasp/models/foundationpose
+   cd ${ROS2_WS}/src/perspective_grasp/models/foundationpose
    mkdir -p weights meshes
    mv ~/Downloads/2023-10-28-18-33-37_model_best.pth weights/refiner_model_best.pth
    mv ~/Downloads/2024-01-11-20-02-45_model_best.pth weights/scorer_model_best.pth
@@ -156,7 +158,7 @@ NVlabs 공식 Google Drive에서만 제공. 두 디렉토리 (`2023-10-28-18-33-
 ```bash
 pip install --user gdown            # 또는 venv 안에서
 
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp/models/foundationpose/weights
+cd ${ROS2_WS}/src/perspective_grasp/models/foundationpose/weights
 
 gdown --folder https://drive.google.com/drive/folders/1DFezOAD0oD1BblsXVxqDsl8fj0ozB1WU \
       -O ./tmp_fp
@@ -176,7 +178,7 @@ rm -rf ./tmp_fp
 **메시 준비** — YOLO 클래스명과 1:1 매칭
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp/models/foundationpose/meshes
+cd ${ROS2_WS}/src/perspective_grasp/models/foundationpose/meshes
 
 cp /path/to/ycb/002_master_chef_can/textured.obj ./master_chef_can.obj
 cp /path/to/ycb/006_mustard_bottle/textured.obj  ./mustard_bottle.obj
@@ -194,7 +196,7 @@ ls | sed 's/\.[^.]*$//' | sort > /tmp/mesh_names.txt
 **컨테이너 interactive 진입**
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+cd ${ROS2_WS}/src/perspective_grasp
 docker compose -f docker/docker-compose.yml run --rm \
   -e HAPPYPOSE_DATA_DIR=/ws/models/happypose \
   cosypose bash
@@ -239,7 +241,7 @@ python -m happypose.toolbox.utils.download --bop_extra_files ycbv
 **메시 준비** — flat 디렉토리, `.obj`/`.ply`만
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp/models/megapose/meshes
+cd ${ROS2_WS}/src/perspective_grasp/models/megapose/meshes
 
 cp /path/to/ycb/006_mustard_bottle/textured.obj ./mustard_bottle.obj
 cp /path/to/ycb/002_master_chef_can/textured.obj ./master_chef_can.obj
@@ -267,7 +269,7 @@ print('extents:', m.extents)
 BundleSDF는 mesh-free zero-shot tracker라 pretrained weights 필수 아님. **쓰기 가능한 `out/` 디렉토리만 있으면 동작**.
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp/models/bundlesdf
+cd ${ROS2_WS}/src/perspective_grasp/models/bundlesdf
 mkdir -p out
 chmod u+w out
 ```
@@ -289,7 +291,7 @@ docker compose -f docker/docker-compose.yml run --rm bundlesdf \
 ## 5. 다운로드 검증
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+cd ${ROS2_WS}/src/perspective_grasp
 
 # SAM2
 ls -lh models/sam2/sam2_hiera_large.pt

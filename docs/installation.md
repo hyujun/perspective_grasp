@@ -10,15 +10,25 @@ Host setup for `perspective_grasp`. The workspace uses a **host + Docker hybrid*
 | GPU | NVIDIA GPU + driver 560+ (the host does **not** need a CUDA toolkit — each Phase 4 Docker stage bundles CUDA 12.6) |
 | ROS 2 | Jazzy Jalisco |
 | Docker | Required only for Phase 4 ML nodes |
-| Workspace path | `~/ros2_ws/perspective_ws/` (assumed throughout docs) |
+| Workspace path | Any colcon workspace; this repo lives at `${ROS2_WS}/src/perspective_grasp/` |
 
 > All five Phase 4 ML nodes (SAM2, FoundationPose, CosyPose, MegaPose, BundleSDF) are implemented with pluggable real+mock backends. SAM2 is live-verified; the other four are mock-smoke-tested and will produce real output once their Docker images are built and weights are in place.
+
+## Workspace layout
+
+Throughout these docs, `${ROS2_WS}` refers to **your** colcon workspace root — the directory that holds `build/`, `install/`, `log/`, and `.venv/`. Pick anything (e.g. `~/ros2_ws/perspective_ws`, `~/dev_ws`, `/opt/work`); the only fixed assumption is that this repo is cloned at `${ROS2_WS}/src/perspective_grasp/`. You can either export `ROS2_WS` in your shell and paste the commands verbatim, or substitute your path mentally.
+
+```bash
+export ROS2_WS=~/ros2_ws/perspective_ws   # example — use whatever path you prefer
+```
+
+The install/build/runtime shell scripts (`scripts/install_host.sh`, `scripts/install_dependencies.sh`, `build.sh`, `.env.live`) discover the workspace root from their own location, so they work with any layout that satisfies `${ROS2_WS}/src/perspective_grasp/`.
 
 ## Clone
 
 ```bash
-mkdir -p ~/ros2_ws/perspective_ws/src
-cd ~/ros2_ws/perspective_ws/src
+mkdir -p ${ROS2_WS}/src
+cd ${ROS2_WS}/src
 git clone https://github.com/hyujun/perspective_grasp.git
 ```
 
@@ -27,7 +37,7 @@ git clone https://github.com/hyujun/perspective_grasp.git
 Installs NVIDIA driver, ROS 2 Jazzy, all C++/Python deps, and Docker in one pass.
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+cd ${ROS2_WS}/src/perspective_grasp
 chmod +x scripts/install_host.sh
 ./scripts/install_host.sh
 ```
@@ -38,7 +48,7 @@ The script is idempotent and covers 7 steps:
 2. ROS 2 Jazzy Desktop + rosdep
 3. ROS 2 apt packages + system C++ libs (tf2, cv_bridge, PCL, Eigen3, OpenCV, Ceres, openmpi, fmt)
 4. C++ libs from source (TEASER++, manif, GTSAM 4.2.0)
-5. Host Python venv at `~/ros2_ws/perspective_ws/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt)
+5. Host Python venv at `${ROS2_WS}/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt)
 6. Docker + `nvidia-container-toolkit`
 7. Model-weights directory scaffold under `models/<service>/`
 
@@ -55,30 +65,66 @@ The script is idempotent and covers 7 steps:
 Use this if Jazzy is already installed and you only need the extra libraries.
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+cd ${ROS2_WS}/src/perspective_grasp
 chmod +x scripts/install_dependencies.sh
 ./scripts/install_dependencies.sh
 ```
 
 Installs ROS 2 packages, system libs, TEASER++, manif, GTSAM, and ultralytics (into the workspace venv). Does **not** touch the NVIDIA driver, CUDA, or Docker.
 
+## RealSense cameras (optional)
+
+If the host will drive Intel RealSense D-series cameras directly (Phase 1 input), run the dedicated installer **after** the host setup script has put `/opt/ros/jazzy` in place:
+
+```bash
+cd ${ROS2_WS}/src/perspective_grasp
+./scripts/install_realsense.sh
+```
+
+It installs librealsense2 from Intel's apt repo (without the DKMS module — unsigned + Secure Boot incompatible), pulls `ros-jazzy-realsense2-camera{,-msgs,-description}`, reloads udev, and force-loads `uvcvideo` at boot. Verified end-state is `ros2 launch realsense2_camera rs_launch.py camera_namespace:=/ camera_name:=camera pointcloud.enable:=true align_depth.enable:=true`. Phase 1 expects the driver's native cloud topic `camera/depth/color/points` — no remapping required. See [running.md § Camera drivers](running.md#camera-drivers) for the multi-camera variants.
+
 ## Python venv — layered, not isolated
 
-Both install scripts create a Python virtual environment at `~/ros2_ws/perspective_ws/.venv` (sibling to `build/install/log`) using `python3 -m venv --system-site-packages`. The pinned deps come from [`scripts/requirements-host.txt`](../scripts/requirements-host.txt) — currently `numpy<2` and `ultralytics`.
+Both install scripts create a Python virtual environment at `${ROS2_WS}/.venv` (sibling to `build/install/log`) using `python3 -m venv --system-site-packages`. The pinned deps come from [`scripts/requirements-host.txt`](../scripts/requirements-host.txt) — currently `numpy<2` and `ultralytics`.
 
 > **This is a layer, not an isolation boundary.** `--system-site-packages` means the venv *inherits* everything under `/usr/lib/python3/dist-packages/` (apt's rclpy / cv_bridge / numpy 1.26.4) and `~/.local/lib/python3.12/site-packages/`. The venv only adds or shadows packages on top.
 >
 > This is intentional: ROS 2 Python bindings (`rclpy`, `cv_bridge`) ship as apt debs and are not pip-installable, so a fully isolated venv would break ROS imports.
 
-**You must activate the venv before building or running any Python-backed node.** `build.sh` auto-activates it if present; for manual `ros2 launch` / `ros2 run`, source it yourself:
+**You must activate the venv before building or running any Python-backed node.** `build.sh` auto-activates it if present; for manual `ros2 launch` / `ros2 run`, the recommended path is to source `.env.live` (handles ROS + workspace + Cyclone DDS — see next section) then layer the venv on top:
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source ~/ros2_ws/perspective_ws/install/setup.bash
-source ~/ros2_ws/perspective_ws/.venv/bin/activate
+source ${ROS2_WS}/src/perspective_grasp/.env.live
+source ${ROS2_WS}/.venv/bin/activate
 ```
 
 Without the venv active, nodes that `import ultralytics` (e.g. `yolo_pcl_cpp_tracker`) will fail with `ModuleNotFoundError`.
+
+## Host shell env — `.env.live`
+
+Host terminals that talk to the Phase 4 Docker stack must match the container DDS settings or sensor-sized topics (Image, DetectionArray, SegmentationArray) silently drop on the wire. The repo ships a sourceable env file that pins all of it in one shot:
+
+```bash
+cd ${ROS2_WS}/src/perspective_grasp
+source .env.live
+# [pg-live] ws=${ROS2_WS}  rmw=rmw_cyclonedds_cpp
+```
+
+`.env.live` does four things:
+
+1. `source /opt/ros/jazzy/setup.bash` and (if built) `<ws>/install/setup.bash`.
+2. `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` — must match the container default.
+3. `export CYCLONEDDS_URI=file://<repo>/packages/bringup/perception_bringup/config/cyclonedds_localhost.xml` — forces localhost-unicast peer discovery so SPDP doesn't wander off-box.
+4. `cd` to the workspace root.
+
+Verified live: SAM2 / RealSense host↔container topic flow needs all three of (host RMW=cyclone, container RMW=cyclone, both pointing at a localhost-peers XML). Mixing Fast DDS on the host with Cyclone in the container shows up as "topic listed by `ros2 topic list` but never echoes" — see [debugging.md § 4.9](debugging.md#49-phase-4-node-runs-but-host-doesnt-see-its-topics).
+
+The venv must be sourced **on top** of `.env.live` for any node that imports ultralytics:
+
+```bash
+source .env.live
+source ${ROS2_WS}/.venv/bin/activate
+```
 
 ### Why numpy<2 and no opencv-python
 
@@ -99,7 +145,7 @@ The Phase 4 services share a base image `perspective_grasp/ml-base` built from [
 All six git references (nvdiffrast, pytorch3d, happypose, sam2, FoundationPose, BundleSDF) are pinned to specific commit SHAs for reproducibility — search for `git checkout` / `@<sha>` in [docker/Dockerfile](../docker/Dockerfile) and the per-stage requirements files for the current values.
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+cd ${ROS2_WS}/src/perspective_grasp
 docker compose -f docker/docker-compose.yml build
 ```
 
@@ -184,8 +230,12 @@ ros2 doctor
 docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi
 
 # Host venv + numpy 1.x ABI (should import without error)
-source ~/ros2_ws/perspective_ws/.venv/bin/activate
+source ${ROS2_WS}/.venv/bin/activate
 python -c "import numpy, ultralytics, torch, cv_bridge; print('ok:', numpy.__version__, 'torch:', torch.__version__)"
+
+# RealSense (only if install_realsense.sh was run — should list connected cams)
+rs-enumerate-devices -s
+ls /opt/ros/jazzy/share/realsense2_camera/launch/rs_launch.py
 ```
 
 ## Next

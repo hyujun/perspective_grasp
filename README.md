@@ -2,7 +2,7 @@
 
 RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulation. 18 ROS 2 packages across 5 pipeline phases, supporting 1–3 cameras via config-driven topology.
 
-> **Status.** Phase 1–3 (C++ perception, fusion, filtering) and infra are implemented. **All 5 Phase 4 ML nodes** (SAM2, FoundationPose, CosyPose, MegaPose, BundleSDF) are wired end-to-end with pluggable real+mock backends, dedicated Docker runtime stages, and multi-camera fan-out. SAM2 is live-verified on hardware; the other four are mock-smoke-tested — live GPU inference is pending user-side weights + Docker image builds. Phase 5 (`grasp_pose_planner`) ships an antipodal planner + `Hand10DoF` adapter (real 10-DoF preshape mapping still TODO).
+> **Status.** Phase 1–3 (C++ perception, fusion, filtering) and infra are implemented. **All 5 Phase 4 ML nodes** (SAM2, FoundationPose, CosyPose, MegaPose, BundleSDF) are wired end-to-end with pluggable real+mock backends, dedicated Docker runtime stages, and multi-camera fan-out. **RealSense → YOLO → SAM2 is live-verified on hardware** (1-cam D-series, host↔container DDS lockstep via `.env.live`); the other four Phase 4 nodes are mock-smoke-tested — live GPU inference is pending user-side weights + Docker image builds. Phase 5 (`grasp_pose_planner`) ships an antipodal planner + `Hand10DoF` adapter (real 10-DoF preshape mapping still TODO).
 
 ## Documentation
 
@@ -19,9 +19,10 @@ RGB-D camera-based 6D pose estimation pipeline with UR5e + 10-DoF hand manipulat
 ```
 perspective_grasp/
 ├── build.sh                      # Phased colcon wrapper
+├── .env.live                     # Host shell env — ROS + workspace + Cyclone DDS
 ├── docker/                       # Dockerfile + docker-compose.yml (Phase 4 ML stack)
-├── scripts/                      # install_host.sh, install_dependencies.sh
-├── docs/                         # Installation / build / running / architecture
+├── scripts/                      # install_host.sh, install_dependencies.sh, install_realsense.sh
+├── docs/                         # Installation / build / running / architecture / debugging
 └── packages/                     # colcon discovers recursively
     ├── interfaces/               # perception_msgs
     ├── bringup/                  # perception_bringup (system launches + camera_config*.yaml)
@@ -47,31 +48,37 @@ perspective_grasp/
 
 ## Quick start
 
+> `${ROS2_WS}` is **your** colcon workspace root — pick anything (`~/ros2_ws/perspective_ws`, `~/dev_ws`, `/opt/work`, …); `build/`, `install/`, `log/`, and `.venv/` will be created here. The only fixed assumption is that this repo is cloned at `${ROS2_WS}/src/perspective_grasp/`. Either `export ROS2_WS=...` once and paste the snippet, or substitute mentally. Details: [docs/installation.md § Workspace layout](docs/installation.md#workspace-layout).
+
 ```bash
+export ROS2_WS=~/ros2_ws/perspective_ws    # example — use any path you prefer
+
 # 1. Clone
-mkdir -p ~/ros2_ws/perspective_ws/src
-cd ~/ros2_ws/perspective_ws/src
+mkdir -p ${ROS2_WS}/src
+cd ${ROS2_WS}/src
 git clone https://github.com/hyujun/perspective_grasp.git
 
 # 2. Install host deps (fresh Ubuntu 24.04)
 cd perspective_grasp && ./scripts/install_host.sh
 # If ROS 2 Jazzy is already present, use scripts/install_dependencies.sh instead.
+# For Intel RealSense cameras (optional): ./scripts/install_realsense.sh
 
-# 3. Build the workspace (creates ~/ros2_ws/perspective_ws/.venv during install step)
-cd ~/ros2_ws/perspective_ws
+# 3. Build the workspace (creates ${ROS2_WS}/.venv during install step)
+cd ${ROS2_WS}
 ./src/perspective_grasp/build.sh
-source install/setup.bash
-source .venv/bin/activate            # required for any Python-backed node (ultralytics, etc.)
 
 # 4. (Optional) Build Phase 4 Docker images
 cd src/perspective_grasp
 docker compose -f docker/docker-compose.yml build
 
-# 5. Launch
+# 5. Source runtime env + launch
+cd ${ROS2_WS}
+source src/perspective_grasp/.env.live    # ROS + workspace + Cyclone DDS
+source .venv/bin/activate                 # ultralytics & friends
 ros2 launch perception_bringup perception_system.launch.py
 ```
 
-> Host-side Python deps (`ultralytics`) are installed into the workspace venv at `~/ros2_ws/perspective_ws/.venv`, NOT into `~/.local` or system site-packages. Source `.venv/bin/activate` before `ros2 launch` / `ros2 run`. `build.sh` auto-activates it during the build itself. See [docs/installation.md#python-venv](docs/installation.md#python-venv).
+> Two host-side things must be sourced per terminal: `.env.live` (ROS + workspace + Cyclone DDS — needed so host shells match the Phase 4 containers) and `.venv/bin/activate` (host pip deps like `ultralytics`, kept out of `~/.local` / system site-packages). `build.sh` auto-activates the venv during the build itself. Details: [docs/installation.md#host-shell-env---envlive](docs/installation.md#host-shell-env---envlive) and [docs/installation.md#python-venv](docs/installation.md#python-venv).
 
 Full instructions: [docs/installation.md](docs/installation.md) → [docs/build.md](docs/build.md) → [docs/running.md](docs/running.md).
 

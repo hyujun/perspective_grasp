@@ -66,7 +66,7 @@ Camera Info  ──────────────────────�
 - PCL, Eigen3, OpenCV
 - Python: `ultralytics` (in the workspace venv), `rclpy`, `cv_bridge` (from apt)
 
-> **Activate the workspace venv before launching.** `ultralytics` is installed into `~/ros2_ws/perspective_ws/.venv` (created by `scripts/install_host.sh` / `scripts/install_dependencies.sh`). Without `source ~/ros2_ws/perspective_ws/.venv/bin/activate`, the Python tracker node crashes with `ModuleNotFoundError: No module named 'ultralytics'`. See [docs/installation.md#python-venv](../../../docs/installation.md#python-venv).
+> **Activate the workspace venv before launching.** `ultralytics` is installed into `${ROS2_WS}/.venv` (created by `scripts/install_host.sh` / `scripts/install_dependencies.sh`, where `${ROS2_WS}` is your colcon workspace root). Without `source ${ROS2_WS}/.venv/bin/activate`, the Python tracker node crashes with `ModuleNotFoundError: No module named 'ultralytics'`. See [docs/installation.md#python-venv](../../../docs/installation.md#python-venv).
 
 ## Library targets
 

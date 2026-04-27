@@ -14,10 +14,14 @@ RGB-D 6D pose estimation pipeline + UR5e + 10-DoF hand manipulation. **18 ROS 2 
 - Host + Docker hybrid: C++ nodes and camera drivers on host; GPU-heavy Python ML (Phase 4) in
   Docker containers sharing `network_mode: host` + `ipc: host` with the host DDS.
 - Phase 4 is code-complete: all 5 ML nodes ship pluggable real+mock backends, dedicated Docker
-  stages, and multi-camera fan-out. SAM2 is live-verified on hardware; FoundationPose / CosyPose /
-  MegaPose / BundleSDF are mock-smoke-tested (live GPU inference pending user-side images + weights).
+  stages, and multi-camera fan-out. **RealSense → YOLO → SAM2 is live-verified end-to-end**
+  on hardware (1-cam D-series); FoundationPose / CosyPose / MegaPose / BundleSDF are
+  mock-smoke-tested (live GPU inference pending user-side images + weights).
 - Phase 5 `grasp_pose_planner` antipodal planner + `Hand10DoF` adapter are implemented. Real
   10-DoF preshape joint mapping is a TODO (see §5 Escalation Triggers).
+- Live host↔container DDS lockstep: containers force Cyclone DDS + an in-container localhost-peers
+  XML; host shells must match by `source <repo>/.env.live` (sets ROS + workspace + Cyclone env in
+  one shot). Sensor-sized topics silently drop without it. RealSense host setup: `scripts/install_realsense.sh`.
 
 References:
 - Full architecture, topics, TF frames, QoS, pipeline modes, optional deps: [docs/architecture.md](./docs/architecture.md)
@@ -183,6 +187,27 @@ l. **Robot-specific frame names in `camera_config.yaml`** — Symptom: `camera_c
    Recovery: keep robot-agnostic names (`base`, `tool0`) in camera_config; the static TF from
    `ur5e_base_link` is applied elsewhere.
 
+m. **Host CYCLONEDDS_URI leaking into Phase 4 containers** — Symptom: `docker compose up <svc>`
+   immediately exits with "can't open configuration file"; OR services run but
+   `ros2 topic echo /sam2/masks` is silent though `ros2 topic list` shows the topic.
+   Cause: agent re-added `CYCLONEDDS_URI` (or whole host env) to compose `environment:` so
+   the host's filesystem path is forwarded into the container, OR the host shell didn't
+   match the container RMW (host Fast DDS + container Cyclone). Detection: `grep -nE
+   'CYCLONEDDS_URI|RMW_IMPLEMENTATION' docker/docker-compose.yml` — both must be hardcoded
+   to in-container values. (git log: `bfb2456`, `11e9b54`). Recovery: keep compose's
+   in-container hardcoding; on the host side use `source <repo>/.env.live`, never raw
+   `export RMW_IMPLEMENTATION=...`.
+
+n. **Phase 1 `cloud_topic` defaulting to `camera/depth/points`** — Symptom: 1-cam RealSense
+   bring-up shows YOLO detections but `pcl_icp_pose_estimator` produces nothing; ICP starves
+   silently. Cause: realsense2_camera publishes its aligned cloud at `depth/color/points`
+   (hardcoded in the driver binary), not `depth/points`. (git log: `6abe611` fixed phase 1.)
+   Detection: `ros2 topic hz /camera/depth/color/points` vs `/camera/depth/points` —
+   the colon-prefixed form is the real one. Recovery: use `camera/depth/color/points` as the
+   default; current `tracker_params.yaml` reflects this. ⚠️ `pcl_merge_node` defaults still
+   reference `camera/depth/points` — confirm with the user before assuming phase 2 needs
+   the same fix (multi-camera path not yet live-verified).
+
 ## 7. Where Things Live (mental map)
 
 Detailed package table: [docs/architecture.md#packages-18-total](./docs/architecture.md#packages-18-total).
@@ -215,6 +240,10 @@ source install/setup.bash
 # Full build (only when dependency order matters)
 ./src/perspective_grasp/build.sh               # RelWithDebInfo (default)
 ./src/perspective_grasp/build.sh --clean       # Wipe build/install/log first
+
+# Live runtime sourcing (per terminal — required for host↔Phase 4 container DDS)
+source src/perspective_grasp/.env.live         # ROS + workspace + Cyclone DDS
+source .venv/bin/activate                      # ultralytics & friends
 
 # Phase 4 Docker images
 COMPOSE_BAKE=true docker compose -f docker/docker-compose.yml build
@@ -255,3 +284,10 @@ Build internals, test breakdown by package, Release toggles, Docker rebuild reci
 - Controller (separate workspace — no code coupling, see I3): `/home/junho/ros2_ws/ur5e_ws/src/ur5e-rt-controller/`
 - ROS 2: `/opt/ros/jazzy/`
 - Memory: `/home/junho/.claude/projects/-home-junho-ros2-ws-perspective-ws-src-perspective-grasp/memory/`
+
+> Caveat for non-dev hosts: these absolute paths are this dev machine's reality. The
+> production / deployment PC uses a different colcon workspace root — user-facing docs
+> (README, [docs/](./docs/)) write `${ROS2_WS}/src/perspective_grasp/` for that reason.
+> When this CLAUDE.md is consulted on a different machine, treat the paths above as
+> *examples*; resolve actual locations from `pwd` / `ros2 pkg prefix` / git remote
+> rather than trusting them literally.

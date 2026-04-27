@@ -122,7 +122,7 @@ grasp_planner:
 
 ```bash
 # 빌드
-cd ~/ros2_ws/perspective_ws
+cd ${ROS2_WS}      # colcon workspace root
 colcon build --packages-select grasp_pose_planner
 source install/setup.bash
 

@@ -55,7 +55,9 @@ and `/yolo/detections` (no leading namespace segment).
 
 ## 2. Launch recipes
 
-All commands assume the workspace is sourced (see [running.md](running.md#prerequisites)).
+All commands assume the workspace is sourced and the host RMW is aligned with
+the Phase 4 containers (see [running.md § Prerequisites](running.md#prerequisites)
+— shorthand: `source <repo>/.env.live` then `source <ws>/.venv/bin/activate`).
 
 ### 2.1 Single camera, node only
 
@@ -232,25 +234,61 @@ Most common causes:
 
 ### 4.9 Phase 4 node runs but host doesn't see its topics
 
-Docker containers use `network_mode: host` + `ipc: host` so DDS traffic
-shares the host graph, but the container user needs matching `ROS_DOMAIN_ID`
-(and optionally `RMW_IMPLEMENTATION`) with the host:
+Containers run `network_mode: host` + `ipc: host` so DDS traffic shares the
+host graph, but **three** env vars must agree end-to-end. Mismatches were
+the dominant failure mode during live SAM2 bring-up — symptom is always
+"`ros2 topic list` shows it, `ros2 topic echo` is silent" or "discovery
+works but Image / DetectionArray drops silently."
+
+| Var | Container default | Host expectation |
+|-----|-------------------|------------------|
+| `ROS_DOMAIN_ID` | inherited from compose env (`0`) | must match |
+| `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` (compose default) | must match — Cyclone↔Fast DDS is silent |
+| `CYCLONEDDS_URI` | `file:///ws/config/cyclonedds_localhost.xml` (in-container path) | localhost-peers XML on the host filesystem — **never** the in-container path |
+
+The supported host setup is sourcing `.env.live`, which sets all three to
+match the container side:
 
 ```bash
-# On the host
-echo "$ROS_DOMAIN_ID"  "$RMW_IMPLEMENTATION"
-
-# Inside the container
-docker exec -it <service> bash -c 'echo "$ROS_DOMAIN_ID" "$RMW_IMPLEMENTATION"'
-
-# From the host, confirm the ML node is actually on the graph
-ros2 node list | grep -E "foundationpose|sam2|cosypose|megapose|bundlesdf"
-ros2 topic list | grep -E "sam2|foundationpose|cosypose|megapose|bundlesdf"
+cd ${ROS2_WS}/src/perspective_grasp
+source .env.live           # ROS + workspace + Cyclone DDS env
+echo "$RMW_IMPLEMENTATION"  # rmw_cyclonedds_cpp
+echo "$CYCLONEDDS_URI"      # file:///<repo>/packages/bringup/perception_bringup/config/cyclonedds_localhost.xml
 ```
 
-If the lists are empty but `docker compose logs` shows the node spinning,
-mismatched `ROS_DOMAIN_ID` is almost always the culprit. See the Docker
-gotchas notes in the workspace memory / `docs/installation.md`.
+Then verify both ends agree:
+
+```bash
+# Host
+echo "$ROS_DOMAIN_ID  $RMW_IMPLEMENTATION  $CYCLONEDDS_URI"
+
+# Container
+docker exec -it pg_sam2 bash -c \
+  'echo "$ROS_DOMAIN_ID  $RMW_IMPLEMENTATION  $CYCLONEDDS_URI"'
+
+# Topic graph
+ros2 node list  | grep -E "foundationpose|sam2|cosypose|megapose|bundlesdf"
+ros2 topic list | grep -E "sam2|foundationpose|cosypose|megapose|bundlesdf"
+ros2 topic hz   /sam2/masks                 # should be ~camera fps
+```
+
+Common pitfalls:
+
+- **Host CYCLONEDDS_URI leaking in.** Earlier compose forwarded the host
+  value verbatim through `environment:`, injecting a host path the
+  container can't open. Compose now hardcodes the in-container path, so
+  the host must point at its own copy of the same XML — `.env.live`
+  handles this. (See commit `bfb2456`.)
+- **Default RMW differs.** Out of the box, Ubuntu 24.04 + Jazzy may
+  initialise `rmw_fastrtps_cpp`. Containers run Cyclone, so a fresh
+  terminal that did `source /opt/ros/jazzy/setup.bash` but **not**
+  `.env.live` won't see container topics. Fix: source `.env.live`.
+- **Multicast off on the LAN.** The `cyclonedds_localhost.xml` shipped
+  here forces unicast localhost peers (`AllowMulticast=spdp` only,
+  `<Peer address="localhost"/>`), which is what the container expects.
+  Don't replace it with a multi-host config without verifying.
+- **`ROS_DOMAIN_ID` mismatch.** Both containers and host default to `0`;
+  override with care (compose passes through `${ROS_DOMAIN_ID:-0}`).
 
 ### 4.10 Fan-out launched but only one camera's node appears
 

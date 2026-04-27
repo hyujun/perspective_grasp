@@ -7,15 +7,17 @@ How to launch the perception stack on the host, the ML nodes in Docker, and how 
 ## Prerequisites
 
 ```bash
-cd ~/ros2_ws/perspective_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source .venv/bin/activate    # workspace venv — required for any Python-backed node
+cd ${ROS2_WS}/src/perspective_grasp
+source .env.live                                      # ROS + workspace + Cyclone DDS
+source ${ROS2_WS}/.venv/bin/activate                  # ultralytics & friends
 ```
 
-All commands below assume the workspace is built and all three layers are sourced. Build instructions: [build.md](build.md).
+All commands below assume the workspace is built and both layers are sourced (`${ROS2_WS}` is **your** colcon workspace root — see [installation.md § Workspace layout](installation.md#workspace-layout)). Build: [build.md](build.md). What `.env.live` sets and why: [installation.md § Host shell env](installation.md#host-shell-env---envlive).
 
-> **Why the venv matters at runtime.** Host-side pip deps (`ultralytics` used by `yolo_pcl_cpp_tracker`) live in `<workspace>/.venv`, not in `~/.local` or `/usr/lib/python3/dist-packages`. Without the venv active, `ros2 launch yolo_pcl_cpp_tracker tracker.launch.py` (and any launch file that spins it up, including `perception_system.launch.py`) crashes with `ModuleNotFoundError: No module named 'ultralytics'`. Docker-hosted Phase 4 nodes are unaffected — they use the venv inside the container image.
+Two failure modes to recognise up front:
+
+- **No `.venv` activated** → `ros2 launch yolo_pcl_cpp_tracker tracker.launch.py` (and any launch that spins it, incl. `perception_system.launch.py`) crashes with `ModuleNotFoundError: No module named 'ultralytics'`. Docker-hosted Phase 4 nodes are unaffected — they use the venv baked inside the container image.
+- **No `.env.live` sourced** → host shells default to whatever RMW the system picked, often `rmw_fastrtps_cpp`. Phase 4 containers run Cyclone DDS by design; the mismatch leaves topics listed by `ros2 topic list` but never echoing. See [debugging.md § 4.9](debugging.md#49-phase-4-node-runs-but-host-doesnt-see-its-topics).
 
 ## Camera drivers
 
@@ -135,10 +137,10 @@ ros2 launch multi_camera_calibration calibration_collect.launch.py
 
 Phase 4 services run in GPU containers defined in [docker/docker-compose.yml](../docker/docker-compose.yml). They share `network_mode: host` + `ipc: host`, so topics appear on the same DDS graph as the host nodes.
 
-**Host↔container DDS lockstep:** containers default to Cyclone DDS with the localhost-peers XML (compose hardcodes both `RMW_IMPLEMENTATION` and `CYCLONEDDS_URI` to in-container paths). Host shells must match — source `<repo>/.env.live` once per terminal to set ROS sourcing + Cyclone env in one shot. Sensor-sized messages (Image, DetectionArray) silently drop without this lockstep — see [debugging.md § 4.9](debugging.md) for symptoms.
+**Host↔container DDS lockstep:** containers default to Cyclone DDS with the localhost-peers XML — compose hardcodes both `RMW_IMPLEMENTATION` and `CYCLONEDDS_URI` to in-container paths so the host's own `CYCLONEDDS_URI` (a host filesystem path) doesn't leak in and crash Cyclone with "can't open configuration file." Host shells must match: `source <repo>/.env.live` is the supported way to set ROS + workspace + Cyclone env in one shot. Sensor-sized messages (Image, DetectionArray, SegmentationArray) silently drop on RMW mismatch — see [debugging.md § 4.9](debugging.md#49-phase-4-node-runs-but-host-doesnt-see-its-topics) for the diagnostic flow.
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+cd ${ROS2_WS}/src/perspective_grasp
 
 # Start individual services
 docker compose -f docker/docker-compose.yml up foundationpose -d

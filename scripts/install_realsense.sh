@@ -7,10 +7,13 @@
 #
 # Verified end-state: this script is sufficient for
 #   ros2 launch realsense2_camera rs_launch.py \
-#       camera_namespace:='' \
+#       camera_namespace:=/ \
 #       camera_name:=camera \
 #       pointcloud.enable:=true \
 #       align_depth.enable:=true
+#
+# ros2 launch rejects empty argument values, so use `camera_namespace:=/` for
+# the root namespace — `camera_namespace:=''` will fail.
 #
 # Installs:
 #   - Build/runtime deps (libusb, libudev, GLFW, GTK, OpenGL)
@@ -43,6 +46,12 @@
 #     https://github.com/IntelRealSense/librealsense/blob/master/doc/installation.md
 # =============================================================================
 set -euo pipefail
+
+# Resolve repo root from this script's location so the trailing instructions
+# print absolute paths that are correct on whatever workspace layout the
+# operator chose. scripts/ -> perspective_grasp/.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "============================================================"
 echo " perspective_grasp - Intel RealSense SDK 2.0 Setup"
@@ -227,13 +236,17 @@ echo ""
 echo " Next steps:"
 echo "   1. Plug a RealSense camera into a USB 3.x port."
 echo "   2. Run 'realsense-viewer' to confirm depth + color streams."
-echo "   3. Source ROS 2 and launch the wrapper:"
-echo "        source /opt/ros/jazzy/setup.bash"
+echo "   3. Source ROS 2 + workspace + Cyclone DDS env in one shot via .env.live:"
+echo "        cd $PROJECT_DIR && source .env.live"
+echo "      (or source /opt/ros/jazzy/setup.bash if the workspace isn't built yet)"
+echo "   4. Launch the RealSense wrapper:"
 echo "        ros2 launch realsense2_camera rs_launch.py \\"
-echo "            camera_namespace:='' \\"
+echo "            camera_namespace:=/ \\"
 echo "            camera_name:=camera \\"
 echo "            pointcloud.enable:=true \\"
 echo "            align_depth.enable:=true"
+echo "      (camera_namespace:=/ pairs with camera_config_1cam.yaml — empty"
+echo "       '' is rejected by ros2 launch.)"
 echo ""
 echo " Using the stock uvcvideo kernel driver (no DKMS, Secure Boot safe)."
 echo " If you later need the out-of-tree driver for UVC-metadata features,"

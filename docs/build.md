@@ -8,8 +8,10 @@ Covers compiling the colcon workspace and rebuilding Docker images.
 
 `build.sh` auto-activates the workspace Python venv at `<workspace>/.venv` if one exists (created by [scripts/install_host.sh](../scripts/install_host.sh) or [scripts/install_dependencies.sh](../scripts/install_dependencies.sh)). This makes `ament_python` scripts stamp venv-python into their shebangs and ensures pip-installed deps like `ultralytics` are on `sys.path` when colcon runs its tests. `--clean` does **not** wipe `.venv`.
 
+> Path conventions: `${ROS2_WS}` is **your** colcon workspace root (the directory holding `build/`, `install/`, `log/`, `.venv/`); this repo lives at `${ROS2_WS}/src/perspective_grasp/`. See [installation.md § Workspace layout](installation.md#workspace-layout).
+
 ```bash
-cd ~/ros2_ws/perspective_ws
+cd ${ROS2_WS}
 
 # Default: RelWithDebInfo
 ./src/perspective_grasp/build.sh
@@ -21,8 +23,10 @@ cd ~/ros2_ws/perspective_ws
 ./src/perspective_grasp/build.sh --clean
 ./src/perspective_grasp/build.sh --clean Release
 
-source install/setup.bash
-source .venv/bin/activate   # also activate the venv for runtime
+# Runtime sourcing: prefer .env.live (sets ROS + workspace + Cyclone DDS in
+# one shot). Then layer the venv on top for ultralytics-backed nodes.
+source src/perspective_grasp/.env.live
+source .venv/bin/activate
 ```
 
 ## Build order
@@ -38,12 +42,12 @@ source .venv/bin/activate   # also activate the venv for runtime
 
 ## Single-package build
 
-When iterating on one package, skip `build.sh`. Activate the workspace venv first so `ament_python` scripts pick up venv-python as their interpreter:
+When iterating on one package, skip `build.sh`. Source `.env.live` for ROS + Cyclone DDS, then layer the venv on top so `ament_python` scripts pick up venv-python as their interpreter:
 
 ```bash
-cd ~/ros2_ws/perspective_ws
-source /opt/ros/jazzy/setup.bash
-source .venv/bin/activate              # if using host-side Python deps (e.g. ultralytics)
+cd ${ROS2_WS}
+source src/perspective_grasp/.env.live   # ROS + workspace (if built) + Cyclone DDS
+source .venv/bin/activate                # ultralytics & friends
 colcon build --packages-select <package_name>
 source install/setup.bash
 ```
@@ -72,7 +76,7 @@ Unit tests use `ament_cmake_gtest`. Four test surfaces ship today:
 Phase 4 ML nodes and Phase 5 manipulation do not yet ship tests.
 
 ```bash
-cd ~/ros2_ws/perspective_ws
+cd ${ROS2_WS}
 
 # Phase 1
 colcon test --packages-select teaser_icp_hybrid_registrator yolo_pcl_cpp_tracker
@@ -121,7 +125,7 @@ Notes:
 The ML containers compile `perception_msgs` at image-build time (via a `msgs-builder` stage inside [docker/Dockerfile](../docker/Dockerfile)). **Any change to `perception_msgs` requires rebuilding the image.**
 
 ```bash
-cd ~/ros2_ws/perspective_ws/src/perspective_grasp
+cd ${ROS2_WS}/src/perspective_grasp
 
 # Rebuild all service images
 docker compose -f docker/docker-compose.yml build
@@ -156,6 +160,8 @@ docker compose -f docker/docker-compose.yml build --no-cache
 | `nvidia-container-cli` error on `docker compose build` | `sudo systemctl restart docker`, confirm `nvidia-ctk runtime configure --runtime=docker` ran |
 | Stale Docker build after editing a Python node | Rebuild only if deps changed — source code is bind-mounted at runtime |
 | Stale Docker build after editing `perception_msgs` | Rebuild with `docker compose build` (msgs are baked into the image) |
+| `perception_launch_utils` not found inside container | Rebuild — the `msgs-builder` stage bakes it in. (Touched by commit `11e9b54` for live SAM2.) |
+| Container starts but Cyclone fails with "can't open configuration file" | Host `CYCLONEDDS_URI` leaked in. Source `.env.live` instead of exporting manually; compose hardcodes the in-container path. See [debugging.md § 4.9](debugging.md#49-phase-4-node-runs-but-host-doesnt-see-its-topics). |
 
 ## Next
 
