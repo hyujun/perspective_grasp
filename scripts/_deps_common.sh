@@ -23,6 +23,15 @@ source "$_COMMON_SCRIPT_DIR/_venv.sh"
 install_ros_apt_deps() {
     echo ""
     echo "=== ROS 2 Jazzy packages + system libraries ==="
+    # Mirrors the union of <depend>/<exec_depend>/<test_depend> declared across
+    # packages/*/*/package.xml. rosdep is not invoked from this script, so this
+    # apt list is the SSOT for what gets installed — keep it in sync with the
+    # package.xml dep keys when adding or removing a node.
+    #
+    # Naming note: rosdep keys differ from apt names in two places:
+    #   - package.xml `libpcl-all-dev` (rosdep key) → apt `libpcl-dev`
+    #   - package.xml `eigen` (rosdep key)          → apt `libeigen3-dev`
+    # The apt names below are what dpkg ships on Ubuntu 24.04 noble.
     sudo apt update
     sudo apt install -y \
         python3-colcon-common-extensions \
@@ -31,20 +40,37 @@ install_ros_apt_deps() {
         build-essential \
         cmake \
         git \
+        ros-jazzy-rclcpp \
+        ros-jazzy-rclcpp-lifecycle \
+        ros-jazzy-rclpy \
+        ros-jazzy-std-msgs \
+        ros-jazzy-sensor-msgs \
+        ros-jazzy-sensor-msgs-py \
+        ros-jazzy-geometry-msgs \
+        ros-jazzy-action-msgs \
+        ros-jazzy-lifecycle-msgs \
+        ros-jazzy-diagnostic-msgs \
+        ros-jazzy-std-srvs \
+        ros-jazzy-tf2 \
         ros-jazzy-tf2-ros \
         ros-jazzy-tf2-eigen \
         ros-jazzy-tf2-sensor-msgs \
         ros-jazzy-tf2-geometry-msgs \
-        ros-jazzy-rclcpp-action \
-        ros-jazzy-rclcpp-lifecycle \
         ros-jazzy-cv-bridge \
+        ros-jazzy-image-transport \
         ros-jazzy-pcl-conversions \
         ros-jazzy-message-filters \
-        ros-jazzy-image-transport \
-        ros-jazzy-diagnostic-msgs \
-        ros-jazzy-std-srvs \
-        ros-jazzy-sensor-msgs-py \
-        libfmt-dev \
+        ros-jazzy-launch \
+        ros-jazzy-launch-ros \
+        ros-jazzy-rqt-image-view \
+        ros-jazzy-rviz2 \
+        ros-jazzy-ament-cmake-gtest \
+        ros-jazzy-ament-cmake-python \
+        ros-jazzy-ament-index-python \
+        ros-jazzy-rosidl-default-generators \
+        python3-yaml \
+        python3-numpy \
+        python3-pytest \
         libpcl-dev \
         libeigen3-dev \
         libopencv-dev \

@@ -46,7 +46,7 @@ The script is idempotent and covers 7 steps:
 
 1. NVIDIA driver 560+ (reboot required after install — re-run the script once up)
 2. ROS 2 Jazzy Desktop + rosdep
-3. ROS 2 apt packages + system C++ libs (tf2, cv_bridge, PCL, Eigen3, OpenCV, Ceres, openmpi, fmt)
+3. ROS 2 apt packages + system C++ libs (rclcpp/rclpy, tf2, cv_bridge, image_transport, PCL, Eigen3, OpenCV, Ceres, openmpi)
 4. C++ libs from source (TEASER++, manif, GTSAM 4.2.0)
 5. Host Python venv at `${ROS2_WS}/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt)
 6. Docker + `nvidia-container-toolkit`

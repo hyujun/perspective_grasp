@@ -17,6 +17,7 @@
   <depend>message_filters</depend>
   <depend>diagnostic_msgs</depend>
   <depend>libpcl-all-dev</depend>
+  <depend>libopenmpi-dev</depend>
 
   <exec_depend>perception_launch_utils</exec_depend>
 
