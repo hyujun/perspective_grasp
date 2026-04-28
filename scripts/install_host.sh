@@ -140,6 +140,10 @@ install_gtsam
 # ---- 5. Host Python deps (workspace venv) ----
 echo ""
 echo "=== [5/8] Host Python deps ==="
+# PERSPECTIVE_TORCH_CUDA picks the torch wheel index. Default cu126 matches
+# our Phase 4 Docker baseline. Override before running this script if the
+# host driver demands a different CUDA — see docs/installation.md.
+#   PERSPECTIVE_TORCH_CUDA=cu128 ./scripts/install_host.sh
 install_host_python
 
 # ---- 6. Docker + NVIDIA Container Toolkit ----
@@ -198,4 +202,12 @@ echo "        docker compose -f docker/docker-compose.yml build"
 echo "   5. Drop weights under models/<service>/ (or set *_WEIGHTS env vars)."
 echo "   6. (Optional) RealSense camera driver + ROS 2 wrapper:"
 echo "        ./src/perspective_grasp/scripts/install_realsense.sh"
+echo ""
+echo " Notes:"
+echo "   - If torch.cuda.is_available() came out False above, re-run with"
+echo "     PERSPECTIVE_TORCH_CUDA=cu128 (or cu130) matching your nvidia-smi"
+echo "     CUDA Version. See docs/installation.md."
+echo "   - perception_system.launch.py auto-selects a host_profile (dev_8gb"
+echo "     vs prod_16gb vs cpu_only) from VRAM. Override with"
+echo "     host_profile:=<name> or PERSPECTIVE_HOST_PROFILE=<name>."
 echo "============================================================"

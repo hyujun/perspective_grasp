@@ -169,6 +169,76 @@ install_host_python() {
     # history may need manual cleanup (look for unexpected versions of
     # numpy/torch in `python -c 'import X; print(X.__file__)'` and rm by
     # hand). Fresh PCs are unaffected.
-    pip install --no-user --upgrade -r "$_COMMON_SCRIPT_DIR/requirements-host.txt"
+    #
+    # PERSPECTIVE_TORCH_CUDA picks which torch wheel index to use. Map:
+    #   cu126 (default)  matches Phase 4 Docker baseline; works on driver 560+
+    #   cu128            for driver 570+/CUDA 12.8 hosts (e.g. RTX 40-series boxes)
+    #   cu130            for driver 580+/CUDA 13.x hosts
+    #   cpu              for headless CI / no GPU
+    # CLAUDE.md anti-pattern (p) is the bug this exists to prevent.
+    local torch_cuda="${PERSPECTIVE_TORCH_CUDA:-cu126}"
+    case "$torch_cuda" in
+        cu126|cu128|cu130|cpu) ;;
+        *)
+            echo "ERROR: PERSPECTIVE_TORCH_CUDA='$torch_cuda' not supported." >&2
+            echo "       Use one of: cu126 (default), cu128, cu130, cpu." >&2
+            return 1
+            ;;
+    esac
+    local torch_index="https://download.pytorch.org/whl/${torch_cuda}"
+    echo ">>> torch wheel index: $torch_index (PERSPECTIVE_TORCH_CUDA=$torch_cuda)"
+    pip install --no-user --upgrade \
+        --extra-index-url "$torch_index" \
+        -r "$_COMMON_SCRIPT_DIR/requirements-host.txt"
     pip uninstall -y opencv-python >/dev/null 2>&1 || true
+
+    _verify_torch_install "$torch_cuda"
+}
+
+# Probe the freshly-installed torch and warn if its CUDA build cannot
+# actually drive the host's NVIDIA driver. Non-fatal — emits a clear
+# diagnostic and exits 0 so the install script keeps going (the runtime
+# helper resolve_torch_device() will still fall back to CPU at node
+# startup; this just surfaces the misconfiguration earlier).
+_verify_torch_install() {
+    local picked="$1"
+    if ! python -c 'import torch' 2>/dev/null; then
+        echo "ERROR: torch failed to import after install" >&2
+        return 1
+    fi
+    python - "$picked" <<'PYEOF'
+import shutil, subprocess, sys
+picked = sys.argv[1]
+import torch
+print(f">>> torch={torch.__version__}  torch.version.cuda={torch.version.cuda}")
+if picked == 'cpu':
+    print(">>> CPU build requested; no GPU probe.")
+    sys.exit(0)
+ok = torch.cuda.is_available()
+print(f">>> torch.cuda.is_available()={ok}")
+if ok:
+    try:
+        print(f">>>   device 0: {torch.cuda.get_device_name(0)}")
+    except Exception as exc:
+        print(f">>>   device 0 name unavailable: {exc}")
+# Probe the deployed driver if nvidia-smi is reachable.
+nvsmi = shutil.which('nvidia-smi')
+if nvsmi:
+    try:
+        out = subprocess.check_output(
+            [nvsmi, '--query-gpu=driver_version', '--format=csv,noheader'],
+            text=True, timeout=4,
+        ).strip().splitlines()[0]
+        print(f">>> nvidia-smi driver={out}")
+    except Exception as exc:
+        print(f">>> nvidia-smi probe failed: {exc}")
+if not ok:
+    print(
+        "WARNING: torch.cuda.is_available() is False after install.\n"
+        "         Likely PERSPECTIVE_TORCH_CUDA was set higher than the\n"
+        "         deployed driver supports. Re-run install with the value\n"
+        "         that matches `nvidia-smi`'s CUDA Version (12.6→cu126,\n"
+        "         12.8→cu128, 13.x→cu130, no GPU→cpu)."
+    )
+PYEOF
 }

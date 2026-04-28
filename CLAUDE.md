@@ -44,6 +44,7 @@ these, **stop and ask** — do not "try harder" to make it work.
 | I6 | `perception_msgs` is the only shared interface | Cross-workspace ABI — silent drift breaks `ur5e_ws/` consumers | Field added/renamed/removed in `.msg`/`.srv`/`.action` without a `docker compose build` + consumer audit |
 | I7 | Control-path QoS = BEST_EFFORT + depth 1 | Stale pose data is worse than none | `RELIABLE` or `KEEP_ALL` on `/pose_filter/*`, `/smoother/*`, `/associated/*`, `/merged/*` |
 | I8 | GPU device resolved through `resolve_torch_device()` only | Dev-PC ↔ exec-PC CUDA mismatches must fall back to CPU with a single WARN, not crash inside model.forward | `device='cuda'` / `device='cuda:0'` passed straight to `.to()` / `build_sam2()` / ultralytics without going through `perception_launch_utils.resolve_torch_device` first |
+| I9 | Per-host param tuning lives in `host_profiles/`, never in code branches | Branching by VRAM/host class in launch or backend code recreates the I4 / anti-pattern (g) trap; profiles isolate it to YAML | `if vram <`, `if cuda_available:`, `if profile_name ==` outside `perception_launch_utils.host_profile`; new `dev_*` / `prod_*` constants hardcoded in launch files |
 
 ## 3. Workflow Loop (the harness)
 
@@ -225,15 +226,16 @@ p. **Host torch CUDA build mismatched to NVIDIA driver** — Symptom: `yolo_byte
    `UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found
    version 12080)`. `torch.cuda.is_available()` returns False even though `nvidia-smi`
    shows a healthy GPU. Cause: the host venv was populated with a torch wheel built for a
-   newer CUDA than the deployed driver supports — common when dev PCs and execution PCs
-   have different drivers and `requirements-host.txt` doesn't pin a specific cuXXX. (Original
-   trace: `cu130` torch wheel on a CUDA-12.8 / driver 570 box.) Detection: compare
-   `python -c "import torch; print(torch.__version__, torch.version.cuda)"` against
-   `nvidia-smi`'s `CUDA Version:` line. Recovery: GPU-using nodes route their `device`
-   parameter through `perception_launch_utils.resolve_torch_device()` (Invariant I8), which
-   probes a 1-element CUDA tensor at load() and falls back to CPU with a single WARN if
-   the alloc fails. The longer fix is Phase A of the dev↔exec-PC plan — pin torch +
-   `PERSPECTIVE_TORCH_CUDA` env var in `scripts/install_host.sh`.
+   newer CUDA than the deployed driver supports. (Original trace: `cu130` torch wheel on
+   a CUDA-12.8 / driver 570 box.) Detection: compare `python -c "import torch; print(
+   torch.__version__, torch.version.cuda)"` against `nvidia-smi`'s `CUDA Version:` line,
+   or check the `preflight:` block at the top of any launch (`perception_system.launch.py`
+   prints it by default). Recovery, top to bottom: (1) install with the right
+   `PERSPECTIVE_TORCH_CUDA` (`cu126` default / `cu128` / `cu130` / `cpu`) — see
+   `docs/installation.md`; (2) at runtime, GPU-using nodes already route through
+   `perception_launch_utils.resolve_torch_device()` (Invariant I8) which probes a 1-element
+   CUDA tensor at load() and falls back to CPU with a single WARN; (3) `host_profile:=cpu_only`
+   forces every Phase 4 backend onto its mock for headless / CI runs.
 
 ## 7. Where Things Live (mental map)
 
@@ -274,6 +276,13 @@ source .venv/bin/activate                      # ultralytics & friends
 
 # Phase 4 Docker images
 COMPOSE_BAKE=true docker compose -f docker/docker-compose.yml build
+
+# Pin the host torch wheel to the deployed driver's CUDA (anti-pattern p):
+PERSPECTIVE_TORCH_CUDA=cu128 ./src/perspective_grasp/scripts/install_host.sh
+# Override host profile for a launch (default = auto):
+ros2 launch perception_bringup perception_system.launch.py host_profile:=dev_8gb
+# Skip preflight (driver/torch probe) without editing launch:
+PERSPECTIVE_PREFLIGHT_SKIP=1 ros2 launch perception_bringup perception_system.launch.py
 ```
 
 Build internals, test breakdown by package, Release toggles, Docker rebuild recipes:
@@ -286,9 +295,16 @@ Build internals, test breakdown by package, Release toggles, Docker rebuild reci
 - Formatting: clang-format (Google style with project modifications).
 - Namespace: `perspective_grasp`.
 - **Launch files**: import from `perception_launch_utils` — `config_path`, `share_file`,
-  `load_config`, `declare_{params_file,camera_config,autostart}_arg`, `fanout_lifecycle_nodes`.
-  Do **not** hand-roll `os.path.join(get_package_share_directory(...), 'config', ...)` or YAML
-  parsing. Add `<exec_depend>perception_launch_utils</exec_depend>` to `package.xml`.
+  `load_config`, `declare_{params_file,camera_config,autostart,host_profile}_arg`,
+  `fanout_lifecycle_nodes`, `preflight_launch_action`, `resolve_host_profile`,
+  `overrides_for_node`. Do **not** hand-roll `os.path.join(get_package_share_directory(...),
+  'config', ...)` or YAML parsing. Add `<exec_depend>perception_launch_utils</exec_depend>`
+  to `package.xml`.
+- **Host profiles**: dev↔exec PC param differences (8 GB vs 16 GB+ VRAM, mock vs real Phase 4
+  backends) live in `packages/bringup/perception_bringup/config/host_profiles/{dev_8gb,
+  prod_16gb,cpu_only}.yaml`. Launch files apply them via `overrides_for_node(profile, name)`
+  splatted *after* the base YAML in `parameters=[...]`. Profiles only swap parameters; never
+  branch code paths (preserves I4).
 - Comments default to none; add only when the *why* is non-obvious (hidden constraint, subtle
   invariant, workaround). Don't narrate *what* well-named code already says.
 

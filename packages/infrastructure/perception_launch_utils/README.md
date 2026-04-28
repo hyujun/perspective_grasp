@@ -157,6 +157,58 @@ Accepted `requested` values:
 | `"cuda:N"` / `"N"` | `cuda:N`         | `cpu` (warn)       |
 | `"cpu"`          | `cpu`              | `cpu`              |
 
+### `check_host_environment()` / `preflight_launch_action(strict=...)`
+
+Once-per-launch probe of `nvidia-smi` + `torch` versions. Logs one
+formatted block at the top of the launch log; warns on driver/torch
+CUDA mismatch (the cu130-on-12.8-driver case). `preflight_launch_action`
+wraps the probe in an `OpaqueFunction`-compatible callable that returns
+`[LogInfo(...)]` (and `Shutdown` when `strict=True` and an error was
+detected). Set `PERSPECTIVE_PREFLIGHT_SKIP=1` to bypass without editing
+the launch file. See `perception_system.launch.py` for the canonical
+wiring (`preflight` / `preflight_strict` launch args).
+
+### Host profiles — `resolve_host_profile()` / `declare_host_profile_arg()`
+
+Per-host parameter overrides live in
+`packages/bringup/perception_bringup/config/host_profiles/`. Three
+profiles ship: `dev_8gb`, `prod_16gb`, `cpu_only`. `auto` selects via
+`nvidia-smi` total VRAM (`< 12000 MiB → dev_8gb`,
+`≥ 12000 MiB → prod_16gb`, no GPU → `cpu_only`).
+
+```python
+from perception_launch_utils import (
+    declare_host_profile_arg,
+    overrides_for_node,
+    resolve_host_profile,
+)
+from launch.substitutions import LaunchConfiguration
+
+def _spawn(context, *_a, **_kw):
+    profile = resolve_host_profile(
+        LaunchConfiguration('host_profile').perform(context))
+    sam2_overrides = overrides_for_node(profile, 'sam2_segmentor')
+    return [Node(
+        package='sam2_instance_segmentor',
+        executable='sam2_segmentor_node',
+        name='sam2_segmentor',
+        parameters=[base_yaml_path, sam2_overrides] if sam2_overrides
+                   else [base_yaml_path],
+    )]
+
+return LaunchDescription([
+    declare_host_profile_arg(),
+    OpaqueFunction(function=_spawn),
+])
+```
+
+`overrides_for_node` returns `{}` when the profile doesn't mention the
+node — splatting an empty dict into `parameters=[...]` is a safe no-op,
+so callers never special-case the no-override path.
+
+Override priority: launch arg `host_profile:=...` → env
+`PERSPECTIVE_HOST_PROFILE` → `auto`.
+
 ## Tests
 
 ```bash

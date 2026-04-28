@@ -1,0 +1,12 @@
+# Host profile: prod_16gb
+#
+# Target: RTX A4000+ / 16 GB+ VRAM execution boxes.
+#
+# This is effectively "no overrides" — every node's default YAML is
+# already tuned for production-class hardware. Listed explicitly so that
+# `host_profile:=prod_16gb` is a valid choice and the auto-selection
+# path has somewhere to land.
+profile_name: "prod_16gb"
+description: "16 GB+ VRAM production boxes. Default model sizes / batch sizes."
+
+overrides: {}

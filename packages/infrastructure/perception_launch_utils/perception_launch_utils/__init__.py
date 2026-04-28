@@ -23,6 +23,19 @@ from .paths import (
     declare_params_file_arg,
     share_file,
 )
+from .host_profile import (
+    HostProfile,
+    auto_select_profile,
+    declare_host_profile_arg,
+    load_host_profile,
+    overrides_for_node,
+    resolve_host_profile,
+)
+from .preflight import (
+    PreflightReport,
+    check_host_environment,
+    preflight_launch_action,
+)
 from .torch_device import DeviceResolution, resolve_torch_device
 
 __all__ = [
@@ -44,4 +57,15 @@ __all__ = [
     # torch_device
     'DeviceResolution',
     'resolve_torch_device',
+    # preflight
+    'PreflightReport',
+    'check_host_environment',
+    'preflight_launch_action',
+    # host_profile
+    'HostProfile',
+    'auto_select_profile',
+    'declare_host_profile_arg',
+    'load_host_profile',
+    'overrides_for_node',
+    'resolve_host_profile',
 ]
