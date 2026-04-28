@@ -27,12 +27,16 @@ from launch.substitutions import LaunchConfiguration
 from perception_launch_utils import (
     declare_autostart_arg,
     declare_camera_config_arg,
+    declare_host_profile_arg,
     declare_params_file_arg,
     fanout_lifecycle_nodes,
+    resolve_host_profile,
 )
 
 
 def _expand(context, *_args, **_kwargs):
+    profile = resolve_host_profile(
+        LaunchConfiguration('host_profile').perform(context))
     return fanout_lifecycle_nodes(
         package='sam2_instance_segmentor',
         executable='sam2_segmentor_node',
@@ -47,6 +51,7 @@ def _expand(context, *_args, **_kwargs):
             'masks_topic':      f'/{ns}/sam2/masks',
         },
         autostart=LaunchConfiguration('autostart'),
+        host_profile=profile,
     )
 
 
@@ -54,6 +59,7 @@ def generate_launch_description():
     return LaunchDescription([
         declare_params_file_arg('sam2_instance_segmentor', 'sam2_params.yaml'),
         declare_camera_config_arg(),
+        declare_host_profile_arg(),
         declare_autostart_arg(),
         OpaqueFunction(function=_expand),
     ])

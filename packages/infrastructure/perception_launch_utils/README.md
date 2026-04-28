@@ -87,6 +87,8 @@ from perception_launch_utils import (
 
 
 def _expand(context, *_a, **_kw):
+    profile = resolve_host_profile(
+        LaunchConfiguration('host_profile').perform(context))
     return fanout_lifecycle_nodes(
         package='sam2_instance_segmentor',
         executable='sam2_segmentor_node',
@@ -101,6 +103,7 @@ def _expand(context, *_a, **_kw):
             'masks_topic':      f'/{ns}/sam2/masks',
         },
         autostart=LaunchConfiguration('autostart'),
+        host_profile=profile,        # ← swap model size / batch by host class
     )
 
 
@@ -108,6 +111,7 @@ def generate_launch_description():
     return LaunchDescription([
         declare_params_file_arg('sam2_instance_segmentor', 'sam2_params.yaml'),
         declare_camera_config_arg(),
+        declare_host_profile_arg(),
         declare_autostart_arg(),
         OpaqueFunction(function=_expand),
     ])
@@ -115,6 +119,12 @@ def generate_launch_description():
 
 `topic_overrides` is a callable `(namespace_clean) -> dict` — the only
 thing that actually differs between the five Phase 4 launch files.
+
+`host_profile` (optional) plumbs the resolved
+[`HostProfile`](#host-profiles--resolve_host_profile--declare_host_profile_arg)
+through; per-node overrides are looked up by the `name=` field. Callers
+that don't need profiles can omit it entirely — behaviour is identical
+to the pre-profile API.
 
 ### `autostart_lifecycle_actions(node, autostart)`
 

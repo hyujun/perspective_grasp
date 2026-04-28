@@ -25,12 +25,16 @@ from launch.substitutions import LaunchConfiguration
 from perception_launch_utils import (
     declare_autostart_arg,
     declare_camera_config_arg,
+    declare_host_profile_arg,
     declare_params_file_arg,
     fanout_lifecycle_nodes,
+    resolve_host_profile,
 )
 
 
 def _expand(context, *_args, **_kwargs):
+    profile = resolve_host_profile(
+        LaunchConfiguration('host_profile').perform(context))
     return fanout_lifecycle_nodes(
         package='megapose_ros2_wrapper',
         executable='megapose_node',
@@ -46,6 +50,7 @@ def _expand(context, *_args, **_kwargs):
             'poses_topic':        f'/{ns}/megapose/raw_poses',
         },
         autostart=LaunchConfiguration('autostart'),
+        host_profile=profile,
     )
 
 
@@ -54,6 +59,7 @@ def generate_launch_description():
         declare_params_file_arg(
             'megapose_ros2_wrapper', 'megapose_params.yaml'),
         declare_camera_config_arg(),
+        declare_host_profile_arg(),
         declare_autostart_arg(),
         OpaqueFunction(function=_expand),
     ])

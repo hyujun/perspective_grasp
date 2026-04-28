@@ -92,6 +92,10 @@ FOUNDATIONPOSE_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
 
 Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per camera declared in `perception_system.cameras`. Each instance gets its own namespace (`/cam0/`, `/cam1/`, …) with all its topics prefixed. This mirrors the pattern in `sam2_segmentor.launch.py` — see [CLAUDE.md](../../../CLAUDE.md) for the multi-camera convention.
 
+### Host profile overrides
+
+`host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name `foundationpose_tracker`. The `dev_8gb` profile drops `refine_iterations` to 3 to fit 8 GB-class VRAM; `cpu_only` flips `backend` to `mock`. See [`config/host_profiles/`](../../bringup/perception_bringup/config/host_profiles/).
+
 ## Dependencies
 
 - **ROS**: `rclpy`, `sensor_msgs`, `geometry_msgs`, `perception_msgs`, `cv_bridge`
