@@ -9,3 +9,13 @@
 
 numpy<2
 ultralytics==8.4.40
+
+# torch + torchvision are pinned so a fresh install can never end up with a
+# wheel built for a CUDA version newer than the deployed NVIDIA driver
+# supports (the "cu130 wheel on a CUDA-12.8 driver" trap — see CLAUDE.md
+# anti-pattern p). The cuXXX index is selected at install time by
+# install_host_python() via the PERSPECTIVE_TORCH_CUDA env var (default:
+# cu126, which matches our Phase 4 Docker baseline). See docs/installation.md
+# for the driver-to-cuXXX mapping.
+torch==2.6.0
+torchvision==0.21.0

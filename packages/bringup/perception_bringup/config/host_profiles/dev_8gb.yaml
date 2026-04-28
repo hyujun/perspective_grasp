@@ -1,0 +1,29 @@
+# Host profile: dev_8gb
+#
+# Target: RTX 3070 Ti / 3080 / similar 8 GB VRAM dev boxes.
+#
+# Overrides shrink the heaviest models so the full Phase 1 + 4 stack
+# fits without OOMing under live RealSense input. They do NOT change
+# code paths — just parameter values that already exist in each node's
+# default YAML. Anything not listed here keeps the default.
+profile_name: "dev_8gb"
+description: "8 GB VRAM dev boxes (e.g. RTX 3070 Ti). Smaller SAM2, lighter MegaPose batches."
+
+overrides:
+  # SAM2: drop from hiera_l (~2.4 GB) to hiera_s (~600 MB).
+  sam2_segmentor:
+    model_checkpoint: "/ws/models/sam2/sam2_hiera_small.pt"
+    model_config:     "sam2_hiera_s.yaml"
+
+  # MegaPose: shrink batch + workers to fit alongside SAM2 + Phase 1.
+  megapose_tracker:
+    n_workers:    2
+    bsz_images:   32
+
+  # BundleSDF: smaller input crop reduces per-track VRAM footprint.
+  bundlesdf_tracker:
+    shorter_side: 320
+
+  # FoundationPose: fewer pose hypotheses + refinement iterations.
+  foundationpose_tracker:
+    refine_iterations: 3

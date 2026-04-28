@@ -38,6 +38,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode
 
 from .camera_config import load_config
+from .host_profile import HostProfile, overrides_for_node
 from .lifecycle import autostart_lifecycle_actions
 
 
@@ -49,13 +50,17 @@ def _single_node(
     executable: str,
     name: str,
     params_file: str,
+    profile_overrides: Dict[str, Any],
 ) -> LifecycleNode:
+    parameters: List[Any] = [params_file]
+    if profile_overrides:
+        parameters.append(profile_overrides)
     return LifecycleNode(
         package=package,
         executable=executable,
         name=name,
         namespace='',
-        parameters=[params_file],
+        parameters=parameters,
         output='screen',
     )
 
@@ -67,13 +72,21 @@ def _namespaced_node(
     params_file: str,
     namespace: str,
     overrides: Dict[str, Any],
+    profile_overrides: Dict[str, Any],
 ) -> LifecycleNode:
+    # Profile overrides go LAST so they win on conflict with both the
+    # base YAML and the per-camera topic remap. (Topic remaps name node
+    # IO; profiles tune model size / batch — they shouldn't collide in
+    # practice, but explicit ordering avoids surprises.)
+    parameters: List[Any] = [params_file, overrides]
+    if profile_overrides:
+        parameters.append(profile_overrides)
     return LifecycleNode(
         package=package,
         executable=executable,
         name=name,
         namespace=namespace,
-        parameters=[params_file, overrides],
+        parameters=parameters,
         output='screen',
     )
 
@@ -87,6 +100,7 @@ def fanout_lifecycle_nodes(
     camera_config_path: str,
     topic_overrides: TopicOverrideFn,
     autostart: Optional[LaunchConfiguration] = None,
+    host_profile: Optional[HostProfile] = None,
 ) -> List:
     """Build per-camera (or single-camera) LifecycleNodes with autostart wiring.
 
@@ -94,6 +108,7 @@ def fanout_lifecycle_nodes(
     ----------
     package, executable, name:
         The ROS 2 ``LifecycleNode`` fields, identical for every camera.
+        ``name`` doubles as the lookup key into ``host_profile.overrides``.
     params_file:
         Path to the node's YAML params (already resolved — pass the
         output of ``LaunchConfiguration('params_file').perform(ctx)``
@@ -109,6 +124,13 @@ def fanout_lifecycle_nodes(
     autostart:
         ``LaunchConfiguration('autostart')``. When ``None``, lifecycle
         autostart wiring is skipped and only the nodes are returned.
+    host_profile:
+        Optional :class:`HostProfile` from
+        :func:`resolve_host_profile`. When provided, the slice for
+        ``name`` is appended to each node's ``parameters=[...]`` so it
+        overrides both the base YAML and any topic remap. ``None``
+        (default) means "no profile overrides" — every spawned node
+        runs purely from its packaged ``<pkg>_params.yaml``.
 
     Returns
     -------
@@ -116,17 +138,22 @@ def fanout_lifecycle_nodes(
     the ``LifecycleNode`` instances plus their autostart event handlers.
     """
     cfg = load_config(camera_config_path if camera_config_path else None)
+    profile_overrides = (
+        overrides_for_node(host_profile, name) if host_profile else {}
+    )
 
     nodes: List[LifecycleNode] = []
     for cam in cfg.cameras:
         ns = cam.ns_clean
         if not ns:
-            nodes.append(_single_node(package, executable, name, params_file))
+            nodes.append(_single_node(
+                package, executable, name, params_file, profile_overrides))
         else:
             nodes.append(_namespaced_node(
                 package, executable, name, params_file,
                 namespace=ns,
                 overrides=topic_overrides(ns),
+                profile_overrides=profile_overrides,
             ))
 
     actions: List = []

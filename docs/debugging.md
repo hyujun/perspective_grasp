@@ -306,7 +306,71 @@ ros2 topic list | grep -E "/cam[0-9]+/sam2/masks" # one per camera
   two launches were given different `camera_config` files. Always pass the
   same yaml to both.
 
-### 4.11 Pose-axis triads don't appear on `/debug/image`
+### 4.11 `torch.cuda.is_available()` is False / `Invalid CUDA 'device=0' requested`
+
+Symptom: `yolo_byte_tracker` (or any Phase 4 node, when run on host) dies on
+startup with one of:
+
+- `ValueError: Invalid CUDA 'device=0' requested. Use 'device=cpu' or pass valid CUDA device(s)...`
+- `UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found version <NNNNN>)`
+- `RuntimeError: CUDA error: no kernel image is available for execution on the device`
+
+…even though `nvidia-smi` shows the GPU as healthy.
+
+Root cause is almost always: the host venv's torch wheel was built for a
+**newer** CUDA than the deployed NVIDIA driver supports (typical when
+the dev PC and execution PC have different drivers and the venv pulled
+torch transitively without a cuXXX pin). Probe:
+
+```bash
+# Driver / runtime your machine actually supports:
+nvidia-smi | grep -E "Driver Version|CUDA Version"
+
+# What torch was compiled against:
+source <ws>/.venv/bin/activate
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+If `torch.version.cuda` is **higher** than the `CUDA Version` reported
+by `nvidia-smi`, that's the bug. CUDA forward-compatibility doesn't
+generally work — a `cu130` wheel cannot run on a CUDA-12.8 driver.
+
+**Mitigations, in order of effort:**
+
+1. The nodes themselves already fall back to CPU via
+   `perception_launch_utils.resolve_torch_device()` — look for a WARN
+   line `CUDA probe failed on cuda:N (...); falling back to cpu` in the
+   node's stderr. If you see it, the node is running CPU-only and any
+   downstream "no detections" is a perf issue, not a crash.
+2. Permanent fix: reinstall torch with a wheel that matches your
+   driver's CUDA version. Map `nvidia-smi` → wheel index:
+
+   | `nvidia-smi` CUDA Version | Torch index URL |
+   |---------------------------|-----------------|
+   | 12.6                      | `https://download.pytorch.org/whl/cu126` |
+   | 12.8                      | `https://download.pytorch.org/whl/cu128` |
+   | 13.0+                     | `https://download.pytorch.org/whl/cu130` |
+   | (no GPU)                  | `https://download.pytorch.org/whl/cpu` |
+
+   ```bash
+   source <ws>/.venv/bin/activate
+   pip install --upgrade --force-reinstall \
+       torch==2.6.0 torchvision==0.21.0 \
+       --index-url https://download.pytorch.org/whl/cu128   # match your driver
+   ```
+
+   `torch==2.6.0` matches the version pinned in our Phase 4 Docker
+   images (`docker/requirements-bundlesdf.txt`). Bumping to a newer
+   torch on the host venv is fine but is a separate decision; keep it
+   in lockstep with `requirements-host.txt` if you change it.
+
+3. Last resort: upgrade the NVIDIA driver to one that supports the
+   CUDA version your torch was built for. Note this can break other
+   CUDA stacks (RealSense SDK, anything cu126-pinned), so prefer (2).
+
+See CLAUDE.md anti-pattern (p) for the canonical write-up.
+
+### 4.12 Pose-axis triads don't appear on `/debug/image`
 
 Detections and the mode label render, but no X/Y/Z axes are drawn. In order:
 

@@ -49,7 +49,7 @@ The script is idempotent and refuses to run as root. It covers 8 steps:
 2. ROS 2 Jazzy Desktop, registered via the canonical `ros2-apt-source` deb (handles upstream key rotations automatically) + rosdep
 3. ROS 2 apt packages + system C++ libs (rclcpp/rclpy, **rmw-cyclonedds-cpp**, tf2, cv_bridge, image_transport, PCL, Eigen3, OpenCV, Ceres, openmpi)
 4. C++ libs from source (TEASER++, manif, GTSAM 4.2.0)
-5. Host Python venv at `${ROS2_WS}/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt) (pip runs with `--no-user` to keep transitive deps inside the venv — see memory note `pip_venv_shadow_trap`)
+5. Host Python venv at `${ROS2_WS}/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt) (pip runs with `--no-user` to keep transitive deps inside the venv — see memory note `pip_venv_shadow_trap`). **`torch` and `torchvision` are pinned and pulled from a cuXXX index chosen by `PERSPECTIVE_TORCH_CUDA`** — see the matrix below.
 6. Docker + `nvidia-container-toolkit`
 7. Model-weights directory scaffold under `models/<service>/`
 
@@ -62,6 +62,30 @@ The script is idempotent and refuses to run as root. It covers 8 steps:
 > If the NVIDIA driver was installed on this run, **reboot** and re-run the script to pick up from the next step.
 >
 > After Docker installs, **log out and back in** so the new `docker` group membership takes effect.
+
+### Picking the torch CUDA build (`PERSPECTIVE_TORCH_CUDA`)
+
+The host venv pins `torch==2.6.0 / torchvision==0.21.0`, but the wheel must be built for a CUDA version your **deployed NVIDIA driver** supports. CUDA forward-compatibility doesn't generally work — a `cu130` wheel cannot run on a CUDA-12.8 driver, no matter how new the GPU is. (See CLAUDE.md anti-pattern (p).)
+
+Run `nvidia-smi` once before installing, read the **`CUDA Version:`** field on the top-right of the table, and set the env var:
+
+| `nvidia-smi` CUDA Version | `PERSPECTIVE_TORCH_CUDA` | Driver branch (typical) |
+|---------------------------|--------------------------|-------------------------|
+| 12.6                      | `cu126` (default)        | 560                     |
+| 12.8                      | `cu128`                  | 570                     |
+| 13.0+                     | `cu130`                  | 580+                    |
+| (no GPU)                  | `cpu`                    | n/a                     |
+
+```bash
+# Example: a host with driver 570 / CUDA 12.8.
+PERSPECTIVE_TORCH_CUDA=cu128 ./scripts/install_host.sh
+# Or, if Jazzy is already present:
+PERSPECTIVE_TORCH_CUDA=cu128 ./scripts/install_dependencies.sh
+```
+
+`install_host_python` runs a probe at the end of step 5 that prints torch version, the cuXXX it was built for, and `nvidia-smi`'s driver version, and warns loudly if `torch.cuda.is_available()` is False — so a mismatch fails this step rather than surfacing later when a node tries to allocate. The runtime helper `perception_launch_utils.resolve_torch_device()` is the second line of defence: nodes still fall back to CPU rather than crashing if the install-time probe was skipped or wrong.
+
+> ℹ Phase 4 Docker images always pin torch to `cu126` regardless of this env var. They run inside containers that bundle their own CUDA 12.6 toolkit, independent of the host driver — no host change is needed for them.
 
 ## Option B — ROS 2 Jazzy already present (deps only)
 

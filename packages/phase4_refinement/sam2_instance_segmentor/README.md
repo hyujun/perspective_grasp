@@ -39,7 +39,7 @@ All topic names are parameters — see [`config/sam2_params.yaml`](config/sam2_p
 | `model_config` | `sam2_hiera_l.yaml` | Hydra config name |
 | `pred_iou_thresh` | `0.88` | Mask-quality threshold |
 | `multimask_output` | `false` | If true, return the best of 3 multi-hypothesis masks |
-| `device` | `"cuda"` | Torch device |
+| `device` | `"auto"` | Torch device — `auto`/`cuda`/`cuda:N`/`cpu`. See [perception_launch_utils.resolve_torch_device](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution); falls back to cpu with a WARN if CUDA is unusable. |
 
 ## Running
 
@@ -75,6 +75,10 @@ SAM2_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
 ### Multi-camera fan-out
 
 Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per camera declared in `perception_system.cameras`. Each instance gets its own namespace (`/cam0/`, `/cam1/`, …) with all its topics prefixed. See [CLAUDE.md](../../../CLAUDE.md) for the multi-camera convention.
+
+### Host profile overrides
+
+The launch accepts `host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`). Profile YAMLs live at [`packages/bringup/perception_bringup/config/host_profiles/`](../../bringup/perception_bringup/config/host_profiles/). For `sam2_segmentor`, the `dev_8gb` profile swaps the heavyweight `sam2_hiera_large.pt` checkpoint for the `_small` variant; `cpu_only` flips `backend` to `mock`. Overrides are appended last in `parameters=[...]`, so they win against both the package's default YAML and any per-camera topic remap.
 
 ## Dependencies
 

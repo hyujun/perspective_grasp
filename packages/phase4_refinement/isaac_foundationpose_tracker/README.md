@@ -41,7 +41,7 @@ All topic names are parameters — see [`config/foundationpose_params.yaml`](con
 | `refine_iterations` | `5` | FoundationPose refiner iterations |
 | `score_threshold` | `0.5` | Drops sub-threshold pose outputs |
 | `depth_max_m` | `2.0` | Zero-out depth beyond this range |
-| `device` | `"cuda"` | Torch device |
+| `device` | `"auto"` | Torch device — `auto`/`cuda`/`cuda:N`/`cpu`. See [perception_launch_utils.resolve_torch_device](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution); falls back to cpu with a WARN if CUDA is unusable. |
 
 ## Mesh registry
 
@@ -91,6 +91,10 @@ FOUNDATIONPOSE_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
 ### Multi-camera fan-out
 
 Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per camera declared in `perception_system.cameras`. Each instance gets its own namespace (`/cam0/`, `/cam1/`, …) with all its topics prefixed. This mirrors the pattern in `sam2_segmentor.launch.py` — see [CLAUDE.md](../../../CLAUDE.md) for the multi-camera convention.
+
+### Host profile overrides
+
+`host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name `foundationpose_tracker`. The `dev_8gb` profile drops `refine_iterations` to 3 to fit 8 GB-class VRAM; `cpu_only` flips `backend` to `mock`. See [`config/host_profiles/`](../../bringup/perception_bringup/config/host_profiles/).
 
 ## Dependencies
 

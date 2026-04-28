@@ -162,6 +162,9 @@ docker compose -f docker/docker-compose.yml build --no-cache
 | Stale Docker build after editing `perception_msgs` | Rebuild with `docker compose build` (msgs are baked into the image) |
 | `perception_launch_utils` not found inside container | Rebuild — the `msgs-builder` stage bakes it in. (Touched by commit `11e9b54` for live SAM2.) |
 | Container starts but Cyclone fails with "can't open configuration file" | Host `CYCLONEDDS_URI` leaked in. Source `.env.live` instead of exporting manually; compose hardcodes the in-container path. See [debugging.md § 4.9](debugging.md#49-phase-4-node-runs-but-host-doesnt-see-its-topics). |
+| `ImportError: cannot import name 'declare_host_profile_arg' from 'perception_launch_utils'` | The `install/perception_launch_utils/` tree is stale. `rm -rf build/perception_launch_utils install/perception_launch_utils` then rebuild — ament_python `colcon build` does **not** always overwrite `__init__.py` after new top-level symbols are added. |
+| `preflight: ... ERROR: torch not importable` but the actual yolo node loads torch fine | Cosmetic only. Launch process runs in `/usr/bin/python3` (apt's ros2 shebang) and doesn't see the venv; nodes use `env python3` and pick up `.venv` from PATH. Newer commits probe via subprocess so this should not appear; rebuild `perception_launch_utils` if you still see it. |
+| `torch.cuda.is_available()` False after install | Wrong cuXXX wheel — see [installation.md § Picking the torch CUDA build](installation.md#picking-the-torch-cuda-build-perspective_torch_cuda) and re-run `PERSPECTIVE_TORCH_CUDA=cuNNN ./scripts/install_host.sh`. |
 
 ## Next
 

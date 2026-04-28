@@ -42,4 +42,4 @@
     n_coarse_iterations:  1
     n_refiner_iterations: 4
     score_threshold:      0.3
-    device:               "cuda"
+    device:               "auto"

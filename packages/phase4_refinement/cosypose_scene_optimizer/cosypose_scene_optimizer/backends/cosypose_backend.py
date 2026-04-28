@@ -83,10 +83,14 @@ class CosyPoseBackend(BaseSceneBackend):
             node.declare_parameter('score_threshold', 0.3)
             .get_parameter_value().double_value
         )
-        self._device: str = (
-            node.declare_parameter('device', 'cuda')
+        # Stored as-is here; the actual probe + fallback runs in load()
+        # so importing this module on CPU-only hosts (colcon test) never
+        # reaches torch. 'auto' = cuda if usable else cpu.
+        self._requested_device: str = (
+            node.declare_parameter('device', 'auto')
             .get_parameter_value().string_value
         )
+        self._device: str = ''  # populated by load() via resolve_torch_device
 
         self._torch: Any = None
         self._estimator: Any = None
@@ -129,8 +133,12 @@ class CosyPoseBackend(BaseSceneBackend):
         from happypose.pose_estimators.cosypose.cosypose.integrated.pose_estimator import (  # type: ignore
             PoseEstimator,
         )
+        from perception_launch_utils import resolve_torch_device
 
         self._torch = torch
+        self._device = resolve_torch_device(
+            self._requested_device, self._node.get_logger(), torch_mod=torch,
+        ).device
         self._observation_cls = ObservationTensor
         self._make_detections_fn = make_detections_from_object_data
         self._object_data_cls = ObjectData

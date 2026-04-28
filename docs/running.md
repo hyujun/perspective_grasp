@@ -205,6 +205,27 @@ ros2 launch perception_bringup perception_system.launch.py \
 
 > The launch path is unified: `N=1` is treated as "N=1 multi-camera", not as a special case. Per-camera nodes are namespaced `/cam0/`, `/cam1/`, `/cam2/`. Do not add `if N==1` branches — change the config instead.
 
+## Host profiles & preflight
+
+`perception_system.launch.py` accepts two extra knobs covering the dev↔execution-PC split:
+
+| Arg | Default | Effect |
+|-----|---------|--------|
+| `host_profile` | `auto` | Picks parameter overrides from [`config/host_profiles/`](../packages/bringup/perception_bringup/config/host_profiles/) (`auto` selects via `nvidia-smi` total VRAM). Valid: `auto` / `dev_8gb` / `prod_16gb` / `cpu_only`. Env override: `PERSPECTIVE_HOST_PROFILE`. |
+| `preflight` | `true` | Runs a one-shot driver/torch/CUDA probe at launch and logs a `preflight:` block. Set to `false` (or env `PERSPECTIVE_PREFLIGHT_SKIP=1`) to bypass. |
+| `preflight_strict` | `false` | When the probe reports a hard error, abort launch instead of continuing with a warning. |
+
+```bash
+# Force the dev profile on a 16 GB box (e.g. while VRAM-budget testing):
+ros2 launch perception_bringup perception_system.launch.py host_profile:=dev_8gb
+
+# CI-style headless run with no GPU at all:
+PERSPECTIVE_HOST_PROFILE=cpu_only PERSPECTIVE_PREFLIGHT_SKIP=1 \
+  ros2 launch perception_bringup perception_system.launch.py
+```
+
+Profile YAMLs only override **parameter values** (model size, batch size, mock vs real backend); they never branch the launch graph. The runtime helper `perception_launch_utils.resolve_torch_device()` is the second line of defence — it falls back to CPU even if preflight was skipped or the wrong profile was chosen.
+
 ## Pipeline modes
 
 `perception_meta_controller` exposes a `SetMode` service that toggles which downstream nodes are active.

@@ -49,7 +49,7 @@ Under multi-camera fan-out each instance exposes `/cam{N}/analyze_scene` — cli
 | `n_coarse_iterations` | `1` | Coarse iterations |
 | `n_refiner_iterations` | `4` | Refiner iterations |
 | `score_threshold` | `0.3` | Drops sub-threshold pose outputs |
-| `device` | `"cuda"` | Torch device |
+| `device` | `"auto"` | Torch device — `auto`/`cuda`/`cuda:N`/`cpu`. See [perception_launch_utils.resolve_torch_device](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution); falls back to cpu with a WARN if CUDA is unusable. |
 
 ## Mesh registry
 
@@ -98,6 +98,10 @@ COSYPOSE_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
 ### Multi-camera fan-out
 
 Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per camera declared in `perception_system.cameras`. Each instance gets its own namespace (`/cam0/`, `/cam1/`, …) with all its topics **and** its action server prefixed. See [CLAUDE.md](../../../CLAUDE.md).
+
+### Host profile overrides
+
+`host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name `cosypose_optimizer`. Profile YAMLs live at [`packages/bringup/perception_bringup/config/host_profiles/`](../../bringup/perception_bringup/config/host_profiles/); `cpu_only` flips this node's `backend` to `mock`. Overrides are appended last in `parameters=[...]` so they win on conflict.
 
 ## Dependencies
 

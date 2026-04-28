@@ -31,4 +31,4 @@
     shorter_side:     480
     depth_max_m:      2.0
     min_mask_area:    400
-    device:           "cuda"
+    device:           "auto"

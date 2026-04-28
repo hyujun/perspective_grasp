@@ -42,7 +42,7 @@ All topic names are parameters — see [`config/megapose_params.yaml`](config/me
 | `mesh_units` | `"m"` | `m` \| `mm` — scale hint for `happypose.RigidObject` |
 | `model_name` | `"megapose-1.0-RGB-multi-hypothesis"` | Key into `happypose.toolbox.utils.load_model.NAMED_MODELS` |
 | `score_threshold` | `0.5` | Drops sub-threshold pose outputs |
-| `device` | `"cuda"` | Torch device |
+| `device` | `"auto"` | Torch device — `auto`/`cuda`/`cuda:N`/`cpu`. See [perception_launch_utils.resolve_torch_device](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution); falls back to cpu with a WARN if CUDA is unusable. |
 
 Inference parameters (refiner iterations, hypothesis count) come from `NAMED_MODELS[model_name]["inference_parameters"]`, **not** from yaml. To tune them, switch to a different `model_name` or patch the backend's `self._inference_params` override map.
 
@@ -97,6 +97,10 @@ MEGAPOSE_CAMERA_CONFIG=/ws/config/camera_config_2cam.yaml \
 ### Multi-camera fan-out
 
 Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per camera declared in `perception_system.cameras`. Each instance gets its own namespace with all its topics prefixed. See [CLAUDE.md](../../../CLAUDE.md).
+
+### Host profile overrides
+
+`host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name `megapose_tracker`. The `dev_8gb` profile shrinks `n_workers`/`bsz_images` for 8 GB-class boxes; `cpu_only` flips `backend` to `mock`. See [`config/host_profiles/`](../../bringup/perception_bringup/config/host_profiles/).
 
 ## Dependencies
 

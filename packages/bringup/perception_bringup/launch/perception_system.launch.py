@@ -13,28 +13,38 @@ When ``camera_config`` is empty, falls back to a single root-namespace camera
 """
 
 from launch import LaunchDescription
-from launch.actions import GroupAction, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, GroupAction, LogInfo, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, PushRosNamespace
 
 from perception_launch_utils import (
     config_path,
     declare_camera_config_arg,
+    declare_host_profile_arg,
     load_config,
+    overrides_for_node,
+    preflight_launch_action,
+    resolve_host_profile,
 )
 
 
-def _per_camera_nodes(ns: str, tracker_config: str):
+def _per_camera_nodes(ns: str, tracker_config: str, profile):
     """Build the per-camera subtree (YOLO + PCL-ICP pose estimator).
 
     Empty ``ns`` (1-cam) → nodes live in the root namespace.
     Non-empty ``ns`` → wrapped in a GroupAction with PushRosNamespace.
+
+    ``profile`` is a :class:`HostProfile`; per-node entries are splatted
+    after the base config so the host profile wins on conflict.
     """
+    yolo_overrides = overrides_for_node(profile, 'yolo_byte_tracker')
     nodes = [
         Node(
             package='yolo_pcl_cpp_tracker',
             executable='yolo_byte_tracker.py',
             name='yolo_byte_tracker',
+            parameters=[yolo_overrides] if yolo_overrides else [],
             output='screen'),
         Node(
             package='yolo_pcl_cpp_tracker',
@@ -53,6 +63,9 @@ def _spawn_nodes(context, *args, **kwargs):
     camera_config = LaunchConfiguration('camera_config').perform(context)
     cfg = load_config(camera_config if camera_config else None)
 
+    profile_name = LaunchConfiguration('host_profile').perform(context)
+    profile = resolve_host_profile(profile_name)
+
     tracker_config = config_path('yolo_pcl_cpp_tracker', 'tracker_params.yaml')
     filter_config = config_path('pose_filter_cpp', 'filter_params.yaml')
     associator_config = config_path(
@@ -60,11 +73,16 @@ def _spawn_nodes(context, *args, **kwargs):
     smoother_config = config_path(
         'pose_graph_smoother', 'smoother_params.yaml')
 
-    actions = []
+    actions: list = [LogInfo(msg=(
+        f'host_profile={profile.profile_name} '
+        f'({len(profile.overrides)} node override(s)) '
+        f'src={profile.source_path}'
+    ))]
 
     # Per-camera subtrees
     for cam in cfg.cameras:
-        actions.extend(_per_camera_nodes(cam.namespace, tracker_config))
+        actions.extend(
+            _per_camera_nodes(cam.namespace, tracker_config, profile))
 
     # Shared fusion / filtering / smoothing (single instance, global topics)
     actions.append(Node(
@@ -101,6 +119,32 @@ def generate_launch_description():
             description=(
                 'Path to camera_config*.yaml (empty = 1-cam fallback)'
             ),
+        ),
+        declare_host_profile_arg(),
+        DeclareLaunchArgument(
+            'preflight',
+            default_value='true',
+            description=(
+                'Run host-environment preflight (driver/torch/CUDA probe) '
+                'before spawning nodes. Set to false to bypass — the '
+                'PERSPECTIVE_PREFLIGHT_SKIP env var also bypasses.'
+            ),
+        ),
+        DeclareLaunchArgument(
+            'preflight_strict',
+            default_value='false',
+            description=(
+                'If true, abort launch when the preflight probe fails. '
+                'Default warns and continues — runtime fallback in '
+                'resolve_torch_device() catches the same problem at node '
+                'startup.'
+            ),
+        ),
+        OpaqueFunction(
+            function=preflight_launch_action(
+                strict=LaunchConfiguration('preflight_strict'),
+            ),
+            condition=IfCondition(LaunchConfiguration('preflight')),
         ),
         OpaqueFunction(function=_spawn_nodes),
     ])

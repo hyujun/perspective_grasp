@@ -1,0 +1,34 @@
+# Host profile: cpu_only
+#
+# Target: no GPU / CI runners / dev laptops.
+#
+# Forces every Phase 4 node onto its CPU mock backend so the system
+# launches end-to-end without a GPU or CUDA toolkit. resolve_torch_device
+# would already fall back to CPU, but the mock backends are far faster
+# at "doing nothing useful" than running real inference on CPU.
+profile_name: "cpu_only"
+description: "No GPU available. Phase 4 backends switched to mock; device=cpu."
+
+overrides:
+  yolo_byte_tracker:
+    device: "cpu"
+
+  sam2_segmentor:
+    backend: "mock"
+    device:  "cpu"
+
+  cosypose_optimizer:
+    backend: "mock"
+    device:  "cpu"
+
+  megapose_tracker:
+    backend: "mock"
+    device:  "cpu"
+
+  bundlesdf_tracker:
+    backend: "mock"
+    device:  "cpu"
+
+  foundationpose_tracker:
+    backend: "mock"
+    device:  "cpu"
