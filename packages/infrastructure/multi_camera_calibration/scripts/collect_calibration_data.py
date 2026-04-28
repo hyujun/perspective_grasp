@@ -32,7 +32,10 @@ class CalibrationDataCollector(Node):
         self.declare_parameter("num_cameras", 3)
         self.declare_parameter("camera_namespaces", ["/cam0", "/cam1", "/cam2"])
         self.declare_parameter("joint_state_topic", "/joint_states")
-        self.declare_parameter("output_dir", "~/calibration_results")
+        # Empty default → resolve at runtime to <repo>/runtime_outputs/calibration
+        # via perception_launch_utils. Launch files normally inject the absolute
+        # path; this fallback covers `ros2 run` / standalone usage.
+        self.declare_parameter("output_dir", "")
         self.declare_parameter("charuco.squares_x", 7)
         self.declare_parameter("charuco.squares_y", 5)
         self.declare_parameter("charuco.square_length", 0.04)
@@ -45,6 +48,9 @@ class CalibrationDataCollector(Node):
         self.camera_namespaces = self.get_parameter("camera_namespaces").value
         joint_state_topic = self.get_parameter("joint_state_topic").value
         output_dir = self.get_parameter("output_dir").value
+        if not output_dir:
+            from perception_launch_utils import workspace_runtime_outputs_dir
+            output_dir = workspace_runtime_outputs_dir("calibration")
         self.output_dir = Path(os.path.expanduser(output_dir))
         self.output_dir.mkdir(parents=True, exist_ok=True)
 

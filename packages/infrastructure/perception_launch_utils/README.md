@@ -35,6 +35,49 @@ from perception_launch_utils import share_file
 rviz = share_file('perception_debug_visualizer', 'rviz', 'debug_view.rviz')
 ```
 
+### `repo_root(anchor_pkg='perception_bringup') -> str`
+
+Absolute path to `<ws>/src/perspective_grasp`. Resolves via the anchor
+package's installed `share/` dir (walks up 4 levels). Override with
+`$PERSPECTIVE_GRASP_REPO_ROOT`.
+
+### `workspace_models_dir(anchor_pkg='perception_bringup') -> str`
+
+Absolute path to `<repo>/models` — the home for input assets (pre-positioned
+weights, meshes, datasets, plus YOLO's auto-downloaded `yolov8n.pt`).
+Override with `$PERSPECTIVE_GRASP_MODELS_DIR`.
+
+```python
+from perception_launch_utils import workspace_models_dir
+
+parameters=[{
+    'model_path': 'yolov8n.pt',
+    'models_dir': workspace_models_dir('yolo_pcl_cpp_tracker'),
+}],
+```
+
+### `workspace_runtime_outputs_dir(subdir='', *, anchor_pkg='perception_bringup', create=True) -> str`
+
+Absolute path to `<repo>/runtime_outputs[/<subdir>]` — the home for
+artifacts a node produces at runtime (calibration results, BundleSDF dumps,
+debug recordings). Distinct from `models/`. Auto-creates the directory.
+Override with `$PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR`. Both `models/` and
+`runtime_outputs/` are git-ignored at the repo root.
+
+```python
+from perception_launch_utils import workspace_runtime_outputs_dir
+
+# In a launch file: inject the workspace-rooted output dir as a parameter.
+Node(
+    package='multi_camera_calibration',
+    executable='collect_calibration_data.py',
+    parameters=[
+        LaunchConfiguration('params_file'),
+        {'output_dir': workspace_runtime_outputs_dir('calibration')},
+    ],
+)
+```
+
 ### `declare_{params_file,camera_config,autostart}_arg()`
 
 One-line replacements for the standard `DeclareLaunchArgument` stanzas.

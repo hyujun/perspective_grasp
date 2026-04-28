@@ -17,13 +17,17 @@ dist/
 .venv/
 venv/
 
-# ML models & weights
+# ML models & weights (input assets — pre-positioned or auto-downloaded)
 *.pt
 *.onnx
 *.engine
 *.trt
 *.pth
 models/
+
+# Runtime-generated artifacts (calibration results, BundleSDF dumps, debug
+# recordings). Override the location with $PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR.
+runtime_outputs/
 
 # IDE
 .vscode/

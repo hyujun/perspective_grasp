@@ -21,7 +21,10 @@ from .paths import (
     declare_autostart_arg,
     declare_camera_config_arg,
     declare_params_file_arg,
+    repo_root,
     share_file,
+    workspace_models_dir,
+    workspace_runtime_outputs_dir,
 )
 from .host_profile import (
     HostProfile,
@@ -47,7 +50,10 @@ __all__ = [
     'load_config',
     # paths
     'config_path',
+    'repo_root',
     'share_file',
+    'workspace_models_dir',
+    'workspace_runtime_outputs_dir',
     'declare_autostart_arg',
     'declare_camera_config_arg',
     'declare_params_file_arg',

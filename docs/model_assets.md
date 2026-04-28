@@ -15,6 +15,8 @@
 
 전제: `install_host.sh` 가 이미 실행되어 `<repo>/models/{foundationpose,happypose,megapose/meshes,sam2,bundlesdf}/` 가 존재한다. 다른 디스크에 두려면 §3 환경변수.
 
+> `models/` vs `runtime_outputs/`: `<repo>/models/` 는 **input asset** 전용 (가중치, 메시, 데이터셋, YOLO가 자동 다운로드한 `yolov8n.pt` 포함). 노드가 런타임에 만들어내는 산출물 (캘리브레이션 결과, BundleSDF per-track 덤프, 디버그 녹화 등) 은 `<repo>/runtime_outputs/<subdir>/` 로 떨어진다. 두 디렉토리 모두 git-ignore. 런치 파일에서는 `perception_launch_utils.workspace_models_dir()` / `workspace_runtime_outputs_dir(subdir)` 로 해결하고, 필요하면 `$PERSPECTIVE_GRASP_{REPO_ROOT,MODELS_DIR,RUNTIME_OUTPUTS_DIR}` 로 외부 디스크에 매핑.
+
 > 경로 표기: `${ROS2_WS}` 는 **사용자의** colcon workspace root (`build/`, `install/`, `log/`, `.venv/` 가 만들어지는 폴더). 이 repo는 `${ROS2_WS}/src/perspective_grasp/` 에 clone되어 있다고 전제 — 자세한 건 [installation.md § Workspace layout](./installation.md#workspace-layout). 아래 명령은 그대로 paste되도록 `${ROS2_WS}` 를 사용한다 (`export ROS2_WS=...` 또는 직접 치환).
 
 ---

@@ -259,6 +259,13 @@ Quick mental map for navigation:
   adapter (preshape mapping TODO, see §5).
 - `packages/infrastructure/` — `perception_meta_controller`, `perception_debug_visualizer`,
   `multi_camera_calibration`, `perception_launch_utils` (shared Python launch helpers).
+- `models/` — input assets (weights, meshes, datasets). YOLO auto-downloads
+  `yolov8n.pt` here; Phase 4 nodes mount it into containers as `/ws/models/`.
+  Git-ignored.
+- `runtime_outputs/<subdir>/` — runtime-generated artifacts (e.g.
+  `runtime_outputs/calibration/` for `multi_camera_calibration`'s ChArUco
+  images + YAML). Resolved by `perception_launch_utils.workspace_runtime_outputs_dir()`.
+  Git-ignored.
 
 ## 8. Common Commands
 
@@ -301,9 +308,19 @@ Build internals, test breakdown by package, Release toggles, Docker rebuild reci
 - **Launch files**: import from `perception_launch_utils` — `config_path`, `share_file`,
   `load_config`, `declare_{params_file,camera_config,autostart,host_profile}_arg`,
   `fanout_lifecycle_nodes`, `preflight_launch_action`, `resolve_host_profile`,
-  `overrides_for_node`. Do **not** hand-roll `os.path.join(get_package_share_directory(...),
-  'config', ...)` or YAML parsing. Add `<exec_depend>perception_launch_utils</exec_depend>`
-  to `package.xml`.
+  `overrides_for_node`, `repo_root`, `workspace_models_dir`,
+  `workspace_runtime_outputs_dir`. Do **not** hand-roll `os.path.join(
+  get_package_share_directory(...), 'config', ...)`, YAML parsing, or
+  `~/...`-style home-relative output paths. Add
+  `<exec_depend>perception_launch_utils</exec_depend>` to `package.xml`.
+- **Workspace artifacts**: every runtime-generated file goes under one of two
+  workspace-rooted directories — `<repo>/models/` for input assets (weights,
+  meshes, datasets, YOLO's auto-downloaded `yolov8n.pt`) and
+  `<repo>/runtime_outputs/<subdir>/` for outputs (calibration results,
+  BundleSDF dumps, debug recordings). Both are git-ignored. Resolve paths via
+  `workspace_models_dir()` / `workspace_runtime_outputs_dir(subdir)` in launch
+  files and inject them as node parameters. Override roots with
+  `$PERSPECTIVE_GRASP_{REPO_ROOT,MODELS_DIR,RUNTIME_OUTPUTS_DIR}`.
 - **Host profiles**: dev↔exec PC param differences (8 GB vs 16 GB+ VRAM, mock vs real Phase 4
   backends) live in `packages/bringup/perception_bringup/config/host_profiles/{dev_8gb,
   prod_16gb,cpu_only}.yaml`. Launch files apply them via `overrides_for_node(profile, name)`

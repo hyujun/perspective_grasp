@@ -11,4 +11,7 @@ multi_camera_calibration:
       dictionary: "DICT_6X6_250"
     min_samples: 30
     joint_state_topic: /joint_states
-    output_dir: "~/calibration_results"
+    # Empty default → launch file injects <repo>/runtime_outputs/calibration
+    # (override via PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR env var or by
+    # passing output_dir directly when launching the node standalone).
+    output_dir: ""

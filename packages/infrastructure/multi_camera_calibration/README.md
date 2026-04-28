@@ -48,6 +48,15 @@ Offline executable that loads saved data, runs per-camera hand-eye solving, and 
 | `charuco.square_length` | `0.04` | Square size (m) |
 | `charuco.marker_length` | `0.03` | ArUco marker size (m) |
 | `min_samples` | `30` | Minimum calibration samples |
+| `output_dir` | `""` (resolved by launch) | Where ChArUco images + collected samples YAML are written. The bundled `calibration_collect.launch.py` injects `<repo>/runtime_outputs/calibration`; override with `$PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR` or by passing `output_dir` directly when launching the node standalone. |
+
+## Output Layout
+
+Calibration artifacts (annotated PNGs, `collected_samples.yaml`,
+`calibration_results.yaml`) land under `<repo>/runtime_outputs/calibration/`
+by default. The directory is git-ignored (see repo `.gitignore`). For the
+offline `calibration_main` executable, pass that same directory as the
+positional `<data_dir>` argument.
 
 ## Algorithms
 
