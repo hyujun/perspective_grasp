@@ -23,6 +23,7 @@ from .paths import (
     declare_params_file_arg,
     share_file,
 )
+from .torch_device import DeviceResolution, resolve_torch_device
 
 __all__ = [
     # camera_config
@@ -40,4 +41,7 @@ __all__ = [
     # lifecycle / fanout
     'autostart_lifecycle_actions',
     'fanout_lifecycle_nodes',
+    # torch_device
+    'DeviceResolution',
+    'resolve_torch_device',
 ]

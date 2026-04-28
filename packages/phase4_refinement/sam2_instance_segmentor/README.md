@@ -39,7 +39,7 @@ All topic names are parameters — see [`config/sam2_params.yaml`](config/sam2_p
 | `model_config` | `sam2_hiera_l.yaml` | Hydra config name |
 | `pred_iou_thresh` | `0.88` | Mask-quality threshold |
 | `multimask_output` | `false` | If true, return the best of 3 multi-hypothesis masks |
-| `device` | `"cuda"` | Torch device |
+| `device` | `"auto"` | Torch device — `auto`/`cuda`/`cuda:N`/`cpu`. See [perception_launch_utils.resolve_torch_device](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution); falls back to cpu with a WARN if CUDA is unusable. |
 
 ## Running
 

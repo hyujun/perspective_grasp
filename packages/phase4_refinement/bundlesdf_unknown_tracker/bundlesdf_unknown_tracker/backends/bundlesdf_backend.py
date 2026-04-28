@@ -80,10 +80,14 @@ class BundleSdfBackend(BaseTrackerBackend):
             node.declare_parameter('min_mask_area', 400)
             .get_parameter_value().integer_value
         )
-        self._device: str = (
-            node.declare_parameter('device', 'cuda')
+        # Stored as-is here; the actual probe + fallback runs in load()
+        # so importing this module on CPU-only hosts (colcon test) never
+        # reaches torch. 'auto' = cuda if usable else cpu.
+        self._requested_device: str = (
+            node.declare_parameter('device', 'auto')
             .get_parameter_value().string_value
         )
+        self._device: str = ''  # populated by load() via resolve_torch_device
 
         self._torch: Any = None
         self._BundleSdf: Any = None
@@ -118,7 +122,12 @@ class BundleSdfBackend(BaseTrackerBackend):
                 'may have renamed the top-level class'
             )
 
+        from perception_launch_utils import resolve_torch_device
+
         self._torch = torch
+        self._device = resolve_torch_device(
+            self._requested_device, self._node.get_logger(), torch_mod=torch,
+        ).device
         self._BundleSdf = BundleSdf
 
         for path in (self._cfg_track_path, self._cfg_nerf_path):

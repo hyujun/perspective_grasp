@@ -47,7 +47,7 @@ All topic names are parameters — see [`config/bundlesdf_params.yaml`](config/b
 | `out_dir` | `/ws/models/bundlesdf/out` | Per-track SDF / debug output root (must be writable) |
 | `shorter_side` | `480` | BundleSDF input image short-side resize |
 | `depth_max_m` | `2.0` | Clip invalid depth pixels |
-| `device` | `"cuda"` | Torch device |
+| `device` | `"auto"` | Torch device — `auto`/`cuda`/`cuda:N`/`cpu`. See [perception_launch_utils.resolve_torch_device](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution); falls back to cpu with a WARN if CUDA is unusable. |
 
 ## Working directory
 

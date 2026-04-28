@@ -32,10 +32,16 @@ class Sam2Backend(BaseBackend):
             node.declare_parameter('model_config', 'sam2_hiera_l.yaml')
             .get_parameter_value().string_value
         )
-        self._device: str = (
-            node.declare_parameter('device', 'cuda')
+        # Stored as-is here; the actual probe + fallback runs in load()
+        # so that importing this module on CPU-only hosts (colcon test)
+        # never reaches torch. 'auto' = cuda if usable else cpu.
+        self._requested_device: str = (
+            node.declare_parameter('device', 'auto')
             .get_parameter_value().string_value
         )
+        self._device: str = ''  # populated by load() via resolve_torch_device
+        # device_type ('cuda'/'cpu') is what torch.autocast accepts; 'cuda:0' would error.
+        self._device_type: str = ''
         self._pred_iou_thresh: float = (
             node.declare_parameter('pred_iou_thresh', 0.88)
             .get_parameter_value().double_value
@@ -63,8 +69,14 @@ class Sam2Backend(BaseBackend):
         import torch  # type: ignore
         from sam2.build_sam import build_sam2  # type: ignore
         from sam2.sam2_image_predictor import SAM2ImagePredictor  # type: ignore
+        from perception_launch_utils import resolve_torch_device
 
         self._torch = torch
+        resolution = resolve_torch_device(
+            self._requested_device, self._node.get_logger(), torch_mod=torch,
+        )
+        self._device = resolution.device
+        self._device_type = resolution.device_type
         self._node.get_logger().info(
             f'Loading SAM2 cfg={self._model_cfg} '
             f'ckpt={self._checkpoint} device={self._device}'
@@ -98,7 +110,7 @@ class Sam2Backend(BaseBackend):
             raise ValueError(f'expected (N, 4) boxes, got shape {boxes.shape}')
 
         torch = self._torch
-        with torch.inference_mode(), torch.autocast(self._device, dtype=torch.bfloat16):
+        with torch.inference_mode(), torch.autocast(self._device_type, dtype=torch.bfloat16):
             self._predictor.set_image(image_rgb)
             # SAM2ImagePredictor.predict accepts a batch of boxes via
             # ``box=np.array([[x1,y1,x2,y2], ...])`` → outputs per-box masks.

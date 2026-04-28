@@ -29,4 +29,4 @@
     refine_iterations:  5
     score_threshold:    0.5
     depth_max_m:        2.0
-    device:             "cuda"
+    device:             "auto"

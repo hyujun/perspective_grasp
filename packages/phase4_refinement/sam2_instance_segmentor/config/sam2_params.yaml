@@ -22,6 +22,6 @@
     # Path is inside the container (see docker-compose volume mount).
     model_checkpoint: "/ws/models/sam2/sam2_hiera_large.pt"
     model_config:     "sam2_hiera_l.yaml"
-    device:           "cuda"
+    device:           "auto"
     pred_iou_thresh:  0.88
     multimask_output: false

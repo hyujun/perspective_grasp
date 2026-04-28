@@ -49,7 +49,7 @@ Under multi-camera fan-out each instance exposes `/cam{N}/analyze_scene` — cli
 | `n_coarse_iterations` | `1` | Coarse iterations |
 | `n_refiner_iterations` | `4` | Refiner iterations |
 | `score_threshold` | `0.3` | Drops sub-threshold pose outputs |
-| `device` | `"cuda"` | Torch device |
+| `device` | `"auto"` | Torch device — `auto`/`cuda`/`cuda:N`/`cpu`. See [perception_launch_utils.resolve_torch_device](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution); falls back to cpu with a WARN if CUDA is unusable. |
 
 ## Mesh registry
 

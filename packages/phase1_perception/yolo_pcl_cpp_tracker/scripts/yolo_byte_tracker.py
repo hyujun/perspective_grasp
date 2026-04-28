@@ -14,6 +14,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image
 from perception_msgs.msg import Detection, DetectionArray
 from cv_bridge import CvBridge
+from perception_launch_utils import resolve_torch_device
 
 try:
     from ultralytics import YOLO
@@ -32,7 +33,10 @@ class YoloByteTrackerNode(Node):
         self.declare_parameter('model_path', 'yolov8n.pt')
         self.declare_parameter('models_dir', '')
         self.declare_parameter('confidence_threshold', 0.5)
-        self.declare_parameter('device', '0')  # GPU device ID
+        # 'auto' resolves to cuda:0 if usable, else cpu (handles dev/exec-PC
+        # CUDA mismatch — see CLAUDE.md anti-pattern p). Accepts 'cuda',
+        # 'cuda:N', numeric 'N', or 'cpu'.
+        self.declare_parameter('device', 'auto')
         self.declare_parameter('image_topic', 'camera/color/image_raw')
         self.declare_parameter('track_buffer', 30)
         self.declare_parameter('track_thresh', 0.5)
@@ -41,7 +45,9 @@ class YoloByteTrackerNode(Node):
         model_path = self.get_parameter('model_path').value
         models_dir = self.get_parameter('models_dir').value
         self.conf_thresh = self.get_parameter('confidence_threshold').value
-        self.device = self.get_parameter('device').value
+        requested_device = self.get_parameter('device').value
+        self.device = resolve_torch_device(
+            requested_device, self.get_logger()).device
         image_topic = self.get_parameter('image_topic').value
 
         # CV Bridge

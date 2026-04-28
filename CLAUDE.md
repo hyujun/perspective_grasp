@@ -43,6 +43,7 @@ these, **stop and ask** — do not "try harder" to make it work.
 | I5 | Optional deps have fallbacks | TEASER++, Ceres, GTSAM must be skippable without breaking build/run | `find_package(<opt> REQUIRED)` for TEASER++ / Ceres / GTSAM; missing `if(<opt>_FOUND)` guard |
 | I6 | `perception_msgs` is the only shared interface | Cross-workspace ABI — silent drift breaks `ur5e_ws/` consumers | Field added/renamed/removed in `.msg`/`.srv`/`.action` without a `docker compose build` + consumer audit |
 | I7 | Control-path QoS = BEST_EFFORT + depth 1 | Stale pose data is worse than none | `RELIABLE` or `KEEP_ALL` on `/pose_filter/*`, `/smoother/*`, `/associated/*`, `/merged/*` |
+| I8 | GPU device resolved through `resolve_torch_device()` only | Dev-PC ↔ exec-PC CUDA mismatches must fall back to CPU with a single WARN, not crash inside model.forward | `device='cuda'` / `device='cuda:0'` passed straight to `.to()` / `build_sam2()` / ultralytics without going through `perception_launch_utils.resolve_torch_device` first |
 
 ## 3. Workflow Loop (the harness)
 
@@ -159,7 +160,9 @@ g. **Misreading 8 GB VRAM as a production constraint** — Symptom: agent refuse
    ML nodes together "because VRAM won't fit." Cause: conflating dev-machine (RTX 3070 Ti
    8 GB) with production (different, higher-spec PC). Detection: any architectural argument
    that cites the 8 GB number. Recovery: clarify dev vs prod before arguing; mode switching
-   is for dev ergonomics, not a production hard limit.
+   is for dev ergonomics, not a production hard limit. Note: this is the *VRAM* axis of the
+   dev↔exec-PC split. The *driver/CUDA* axis is anti-pattern (p) — different problem,
+   different fix (`resolve_torch_device`, not VRAM tuning).
 
 h. **Unthrottled logging in a real-time callback** — Symptom: per-frame `RCLCPP_INFO`
    in a YOLO/ICP/filter loop drags latency up and buries real warnings. Cause: debug logging
@@ -216,6 +219,21 @@ o. **`perception_launch_utils` missing after partial build** — Symptom: `colco
    `ls install/perception_launch_utils/` after a partial build. Recovery: `build.sh` Phase 1
    builds it eagerly alongside `perception_msgs` (git log: `9c49b34`); for ad-hoc selects,
    add it explicitly: `colcon build --packages-select perception_launch_utils <consumer>`.
+
+p. **Host torch CUDA build mismatched to NVIDIA driver** — Symptom: `yolo_byte_tracker`
+   crashes immediately with `ValueError: Invalid CUDA 'device=0' requested`, preceded by
+   `UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found
+   version 12080)`. `torch.cuda.is_available()` returns False even though `nvidia-smi`
+   shows a healthy GPU. Cause: the host venv was populated with a torch wheel built for a
+   newer CUDA than the deployed driver supports — common when dev PCs and execution PCs
+   have different drivers and `requirements-host.txt` doesn't pin a specific cuXXX. (Original
+   trace: `cu130` torch wheel on a CUDA-12.8 / driver 570 box.) Detection: compare
+   `python -c "import torch; print(torch.__version__, torch.version.cuda)"` against
+   `nvidia-smi`'s `CUDA Version:` line. Recovery: GPU-using nodes route their `device`
+   parameter through `perception_launch_utils.resolve_torch_device()` (Invariant I8), which
+   probes a 1-element CUDA tensor at load() and falls back to CPU with a single WARN if
+   the alloc fails. The longer fix is Phase A of the dev↔exec-PC plan — pin torch +
+   `PERSPECTIVE_TORCH_CUDA` env var in `scripts/install_host.sh`.
 
 ## 7. Where Things Live (mental map)
 

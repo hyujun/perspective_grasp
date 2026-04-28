@@ -19,6 +19,14 @@ This package provides the primary real-time pose estimation pipeline (Phase 1). 
 
 **Parameters**: `model_path`, `confidence_threshold`, `device`, `track_buffer`, `track_thresh`, `match_thresh`
 
+`device` defaults to `"auto"` and is resolved via
+[`perception_launch_utils.resolve_torch_device`](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution)
+— `auto` picks `cuda:0` if usable else falls back to `cpu` with a WARN
+log. Accepts `"cuda"`, `"cuda:N"`, numeric `"N"`, or `"cpu"` as
+overrides. The fallback exists because the host venv on dev / execution
+PCs can ship different cuXXX torch builds than the deployed NVIDIA
+driver supports — see CLAUDE.md anti-pattern (p).
+
 ### pcl_icp_pose_estimator (C++)
 
 3D pose estimation from synchronized detections and point clouds.

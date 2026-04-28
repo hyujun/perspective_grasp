@@ -122,6 +122,41 @@ Low-level helper used by `fanout_lifecycle_nodes`. Exposed for launch
 files that spawn a single `LifecycleNode` outside of the fan-out path
 (e.g., `smoother.launch.py`).
 
+### `resolve_torch_device(requested, logger) -> DeviceResolution`
+
+Used by every GPU node in the workspace (yolo_byte_tracker + Phase 4
+backends). Maps a YAML `device` parameter to a verified torch device
+string, falling back to `"cpu"` with a single WARN when CUDA is
+unusable. Catches the dev-PC ↔ execution-PC trap where the host venv
+was built against a different CUDA than the driver supports (e.g.
+`cu130` torch wheel on a CUDA-12.8 driver — `is_available()` lies,
+allocation fails). The probe allocates a 1-element tensor on the
+target device so the failure surfaces here instead of inside a model's
+forward pass.
+
+```python
+from perception_launch_utils import resolve_torch_device
+
+# In a node's load() — pass the live torch module so we don't import twice.
+import torch
+res = resolve_torch_device(
+    self._requested_device, self._node.get_logger(), torch_mod=torch,
+)
+self._device = res.device              # 'cuda:0' or 'cpu' — pass to .to() / build_sam2()
+device_type = res.device_type          # 'cuda' or 'cpu' — pass to torch.autocast(...)
+if res.downgraded:
+    ...                                 # optional: skip half-precision paths on CPU
+```
+
+Accepted `requested` values:
+
+| Input            | Resolved (CUDA OK) | Resolved (no CUDA) |
+|------------------|--------------------|--------------------|
+| `"auto"` (default) | `cuda:0`         | `cpu` (warn)       |
+| `"cuda"`         | `cuda:0`           | `cpu` (warn)       |
+| `"cuda:N"` / `"N"` | `cuda:N`         | `cpu` (warn)       |
+| `"cpu"`          | `cpu`              | `cpu`              |
+
 ## Tests
 
 ```bash

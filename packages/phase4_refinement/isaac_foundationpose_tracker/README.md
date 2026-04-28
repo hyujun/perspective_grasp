@@ -41,7 +41,7 @@ All topic names are parameters — see [`config/foundationpose_params.yaml`](con
 | `refine_iterations` | `5` | FoundationPose refiner iterations |
 | `score_threshold` | `0.5` | Drops sub-threshold pose outputs |
 | `depth_max_m` | `2.0` | Zero-out depth beyond this range |
-| `device` | `"cuda"` | Torch device |
+| `device` | `"auto"` | Torch device — `auto`/`cuda`/`cuda:N`/`cpu`. See [perception_launch_utils.resolve_torch_device](../../infrastructure/perception_launch_utils/README.md#resolve_torch_devicerequested-logger---deviceresolution); falls back to cpu with a WARN if CUDA is unusable. |
 
 ## Mesh registry
 
