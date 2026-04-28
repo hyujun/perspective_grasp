@@ -80,17 +80,32 @@ Topic names, TF frames, pipeline modes, and the design principles behind the lay
 
 ### Launch helpers — `perception_launch_utils`
 
-Every `launch.py` in this workspace imports from `perception_launch_utils` for three concerns:
+Every `launch.py` in this workspace imports from `perception_launch_utils` for these concerns:
 
-| Helper | Replaces |
-|--------|----------|
+| Helper | Replaces / does |
+|--------|-----------------|
 | `config_path(pkg, filename=None)` | `os.path.join(get_package_share_directory(pkg), 'config', filename)` |
 | `share_file(pkg, *parts)` | The same pattern for non-`config/` resources (rviz, meshes...) |
-| `declare_params_file_arg`, `declare_camera_config_arg`, `declare_autostart_arg` | The boilerplate `DeclareLaunchArgument` stanzas |
+| `declare_params_file_arg`, `declare_camera_config_arg`, `declare_host_profile_arg`, `declare_autostart_arg` | The boilerplate `DeclareLaunchArgument` stanzas |
 | `load_config(path)` → `PerceptionSystemConfig` | The old `importlib`-based `camera_config_loader.py` shim from `perception_bringup` |
 | `fanout_lifecycle_nodes(...)` | The ~140-line `OpaqueFunction + yaml.safe_load + per-camera LifecycleNode + autostart event wiring` block that used to be copy-pasted across the five Phase 4 launch files |
+| `resolve_torch_device(requested, logger)` → `DeviceResolution` | Picks a verified torch device string for GPU-using nodes, falling back to CPU with one WARN when the cuXXX wheel can't drive the deployed NVIDIA driver |
+| `resolve_host_profile(name)` → `HostProfile` + `overrides_for_node(profile, name)` | Loads `dev_8gb`/`prod_16gb`/`cpu_only` parameter overrides from `packages/bringup/perception_bringup/config/host_profiles/`. `auto` picks by total VRAM |
+| `preflight_launch_action(strict=...)` | One-shot `OpaqueFunction` that prints driver/torch versions at launch time and warns on mismatch |
 
 See [perception_launch_utils/README.md](../packages/infrastructure/perception_launch_utils/README.md) for the full API and migration examples.
+
+### Host profiles & dev↔execution PC split
+
+The dev box (RTX 3070 Ti / 8 GB) and the execution PC (RTX A4000+ / 16 GB+) run the **same code paths**. Differences are isolated to YAML overrides keyed by node name:
+
+| Profile | Auto-selected when | Effect |
+|---------|--------------------|--------|
+| `dev_8gb` | total VRAM < 12 GiB | SAM2 small checkpoint, MegaPose `bsz_images=32`, BundleSDF `shorter_side=320`, FoundationPose 3 refine iters |
+| `prod_16gb` | total VRAM ≥ 12 GiB | No overrides — every node uses its packaged YAML defaults |
+| `cpu_only` | `nvidia-smi` not on PATH | All Phase 4 nodes flip to `mock` backend; YOLO `device:cpu` |
+
+Profiles never branch code (Invariant I9). The runtime helper `resolve_torch_device()` is the second line of defence — it falls back to CPU even if a misconfigured profile points the node at an unusable GPU. Authoring guide: [`config/host_profiles/README.md`](../packages/bringup/perception_bringup/config/host_profiles/README.md).
 
 ## Topic reference
 
