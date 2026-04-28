@@ -128,20 +128,73 @@ def _probe_nvidia_smi() -> tuple[Optional[str], Optional[str], Optional[str], Op
     return drv, cuda, gpu, None
 
 
-def _probe_torch(torch_mod: Any = None) -> tuple[Optional[str], Optional[str], Optional[bool], Optional[str]]:
-    """Returns (version, version.cuda, is_available, error_msg)."""
-    if torch_mod is None:
+def _probe_torch(
+    torch_mod: Any = None,
+    *,
+    use_subprocess: bool = True,
+) -> tuple[Optional[str], Optional[str], Optional[bool], Optional[str]]:
+    """Returns (version, version.cuda, is_available, error_msg).
+
+    The launch process is ``/opt/ros/jazzy/bin/ros2``, whose shebang is
+    hardcoded ``/usr/bin/python3`` and therefore does not see packages
+    installed into the workspace venv. Node subprocesses (started via
+    ``#!/usr/bin/env python3``) DO see the venv because ``activate``
+    prepends ``.venv/bin`` to PATH. So an in-process ``import torch``
+    here would say "missing" even when the actual nodes will find it.
+
+    To probe what nodes will actually see, we shell out to ``python3``
+    via PATH. That picks up the same interpreter the nodes will run
+    under. ``use_subprocess=False`` forces in-process import (used by
+    the test seam where ``torch_mod`` is injected).
+    """
+    if torch_mod is not None:
         try:
-            import torch as torch_mod  # type: ignore
+            ver = getattr(torch_mod, '__version__', None)
+            cuda = getattr(torch_mod.version, 'cuda', None)
+            avail = bool(getattr(torch_mod.cuda, 'is_available', lambda: False)())
+            return ver, cuda, avail, None
+        except Exception as exc:  # noqa: BLE001
+            return None, None, None, f'torch probe failed: {exc}'
+
+    if not use_subprocess:
+        try:
+            import torch as _t  # type: ignore
         except ImportError as exc:
             return None, None, None, f'torch not importable: {exc}'
+        return _probe_torch(torch_mod=_t, use_subprocess=False)
+
+    # Subprocess path: emit JSON on stdout so we don't have to parse
+    # torch's own startup chatter (deprecation warnings etc. on stderr).
+    py_code = (
+        'import json,sys\n'
+        'try:\n'
+        '    import torch\n'
+        '    print(json.dumps({"v":torch.__version__,"c":torch.version.cuda,'
+        '"a":bool(torch.cuda.is_available())}))\n'
+        'except Exception as e:\n'
+        '    print(json.dumps({"err":f"{type(e).__name__}: {e}"}))\n'
+    )
     try:
-        ver = getattr(torch_mod, '__version__', None)
-        cuda = getattr(torch_mod.version, 'cuda', None)
-        avail = bool(getattr(torch_mod.cuda, 'is_available', lambda: False)())
-        return ver, cuda, avail, None
-    except Exception as exc:  # noqa: BLE001
-        return None, None, None, f'torch probe failed: {exc}'
+        out = subprocess.check_output(
+            ['python3', '-c', py_code],
+            text=True, timeout=10,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        return None, None, None, 'python3 not on PATH'
+    except subprocess.TimeoutExpired:
+        return None, None, None, 'torch import timed out'
+    except subprocess.CalledProcessError as exc:
+        return None, None, None, f'subprocess error: {exc.stderr or exc}'
+    import json
+    line = out.strip().splitlines()[-1] if out.strip() else '{}'
+    try:
+        d = json.loads(line)
+    except json.JSONDecodeError:
+        return None, None, None, f'unparseable torch probe output: {line!r}'
+    if 'err' in d:
+        return None, None, None, f'torch not importable: {d["err"]}'
+    return d.get('v'), d.get('c'), bool(d.get('a')), None
 
 
 def _cuda_minor(version: Optional[str]) -> Optional[tuple[int, int]]:

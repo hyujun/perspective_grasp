@@ -9,6 +9,7 @@ pytest without ROS sourced.
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 from perception_launch_utils import (
@@ -127,6 +128,46 @@ def test_torch_import_failure_is_an_error():
     )
     assert rep.ok is False
     assert rep.errors
+
+
+def test_subprocess_probe_finds_torch_via_path(monkeypatch, tmp_path):
+    """Regression for the launch-vs-node Python split: ros2's launch
+    process is /usr/bin/python3 (apt shebang), but nodes start their
+    Python via `env python3`. So preflight must shell out to PATH's
+    python3, not import torch in-process. We simulate by putting a
+    shim ``python3`` on PATH that returns a known torch-shaped JSON."""
+    shim = tmp_path / 'python3'
+    shim.write_text(
+        '#!/bin/sh\n'
+        'echo \'{"v":"2.6.0+cu126","c":"12.6","a":true}\'\n'
+    )
+    shim.chmod(0o755)
+    monkeypatch.setenv('PATH', f'{tmp_path}:{os.environ["PATH"]}')
+
+    # No torch_mod injected → falls through to subprocess path
+    rep = check_host_environment(
+        nvidia_smi_output=_nvsmi('560.94', '12.6'),
+    )
+    assert rep.torch_version == '2.6.0+cu126'
+    assert rep.torch_cuda == '12.6'
+    assert rep.cuda_available is True
+    assert rep.ok is True
+
+
+def test_subprocess_probe_handles_import_error(monkeypatch, tmp_path):
+    shim = tmp_path / 'python3'
+    shim.write_text(
+        '#!/bin/sh\n'
+        'echo \'{"err":"ModuleNotFoundError: No module named torch"}\'\n'
+    )
+    shim.chmod(0o755)
+    monkeypatch.setenv('PATH', f'{tmp_path}:{os.environ["PATH"]}')
+
+    rep = check_host_environment(
+        nvidia_smi_output=_nvsmi('560.94', '12.6'),
+    )
+    assert rep.ok is False
+    assert any('torch not importable' in e for e in rep.errors)
 
 
 def test_render_contains_status_line():
