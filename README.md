@@ -58,11 +58,13 @@ mkdir -p ${ROS2_WS}/src
 cd ${ROS2_WS}/src
 git clone https://github.com/hyujun/perspective_grasp.git
 
-# 2. Install host deps (fresh Ubuntu 24.04). Pick a torch wheel index
-#    matching your nvidia-smi `CUDA Version:` field (12.6→cu126 default,
-#    12.8→cu128, 13.x→cu130, no GPU→cpu). See docs/installation.md.
+# 2. Install host deps (fresh Ubuntu 24.04). The torch wheel index is
+#    auto-detected from `nvidia-smi`'s CUDA Version (12.6→cu126,
+#    12.8→cu128, 13.x→cu130, no GPU→cpu). Override only when needed —
+#    see docs/installation.md.
 cd perspective_grasp
-PERSPECTIVE_TORCH_CUDA=cu126 ./scripts/install_host.sh
+./scripts/install_host.sh
+# (override example for headless / CI: PERSPECTIVE_TORCH_CUDA=cpu ./scripts/install_host.sh)
 # If ROS 2 Jazzy is already present, use scripts/install_dependencies.sh instead.
 # For Intel RealSense cameras (optional): ./scripts/install_realsense.sh
 
@@ -96,7 +98,7 @@ Full instructions: [docs/installation.md](docs/installation.md) → [docs/build.
 
 The same source tree runs on dev boxes (e.g. RTX 3070 Ti / 8 GB) and execution PCs (RTX A4000+ / 16 GB+). Three layers absorb the differences without code branches:
 
-1. **Install-time torch pin.** `scripts/install_host.sh` picks the cuXXX wheel index from `PERSPECTIVE_TORCH_CUDA` (default `cu126`, matches Phase 4 Docker baseline). Catches the trap where pip auto-resolves a torch wheel for a CUDA newer than the deployed driver supports.
+1. **Install-time torch pin.** `scripts/install_host.sh` auto-detects the cuXXX wheel index by parsing `nvidia-smi`'s `CUDA Version:` line (override with `PERSPECTIVE_TORCH_CUDA=cu126|cu128|cu130|cpu`). Catches the trap where pip auto-resolves a torch wheel for a CUDA newer than the deployed driver supports.
 2. **Launch-time preflight.** `perception_system.launch.py` prints a `preflight:` block at the top of every launch comparing `nvidia-smi` driver/CUDA against the venv's `torch.version.cuda`. Bypass with `preflight:=false` or `PERSPECTIVE_PREFLIGHT_SKIP=1`.
 3. **Host profiles.** `host_profile:=<auto|dev_8gb|prod_16gb|cpu_only>` (env: `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name from [`packages/bringup/perception_bringup/config/host_profiles/`](packages/bringup/perception_bringup/config/host_profiles/). Profiles only swap **parameters** (model size, batch, mock vs real backend) — never code paths. `auto` picks via total VRAM.
 

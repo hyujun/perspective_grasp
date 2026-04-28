@@ -121,7 +121,9 @@ else
 fi
 
 # shellcheck disable=SC1091
+set +u
 source /opt/ros/jazzy/setup.bash
+set -u
 
 # ---- 3. ROS 2 apt packages + system C++ libs ----
 echo ""
@@ -140,10 +142,11 @@ install_gtsam
 # ---- 5. Host Python deps (workspace venv) ----
 echo ""
 echo "=== [5/8] Host Python deps ==="
-# PERSPECTIVE_TORCH_CUDA picks the torch wheel index. Default cu126 matches
-# our Phase 4 Docker baseline. Override before running this script if the
-# host driver demands a different CUDA — see docs/installation.md.
-#   PERSPECTIVE_TORCH_CUDA=cu128 ./scripts/install_host.sh
+# torch wheel index is auto-selected from `nvidia-smi`'s "CUDA Version:" line
+# (12.6→cu126, 12.8→cu128, 13.x→cu130, no GPU→cpu). Override only if you
+# need to force a different build — see docs/installation.md.
+#   PERSPECTIVE_TORCH_CUDA=cu128 ./scripts/install_host.sh    # explicit pin
+#   PERSPECTIVE_TORCH_CUDA=cpu   ./scripts/install_host.sh    # headless / CI
 install_host_python
 
 # ---- 6. Docker + NVIDIA Container Toolkit ----
@@ -204,9 +207,10 @@ echo "   6. (Optional) RealSense camera driver + ROS 2 wrapper:"
 echo "        ./src/perspective_grasp/scripts/install_realsense.sh"
 echo ""
 echo " Notes:"
-echo "   - If torch.cuda.is_available() came out False above, re-run with"
-echo "     PERSPECTIVE_TORCH_CUDA=cu128 (or cu130) matching your nvidia-smi"
-echo "     CUDA Version. See docs/installation.md."
+echo "   - The torch wheel index was picked from nvidia-smi's CUDA Version."
+echo "     If torch.cuda.is_available() still came out False above, force a"
+echo "     specific build with PERSPECTIVE_TORCH_CUDA=cu126|cu128|cu130|cpu"
+echo "     and re-run. See docs/installation.md."
 echo "   - perception_system.launch.py auto-selects a host_profile (dev_8gb"
 echo "     vs prod_16gb vs cpu_only) from VRAM. Override with"
 echo "     host_profile:=<name> or PERSPECTIVE_HOST_PROFILE=<name>."

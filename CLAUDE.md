@@ -38,10 +38,10 @@ these, **stop and ask** — do not "try harder" to make it work.
 |---|-----------|-----|----------------------------------|
 | I1 | Vision Push, Controller Pull | Control loop must not block on perception callbacks | `wait_for_message`, `spin_until_future_complete` inside a control-rate timer callback |
 | I2 | Heavy ops = Action Server, not Service | Services block callers; actions support cancel/feedback | New long-running `.srv` for scene analysis / grasp planning / scan-style ops |
-| I3 | No code coupling with `ur5e_ws/` | Cross-workspace boundary is TF2 frames + action interfaces only | `find_package(ur5e_*)`, `import ur5e_*`, `#include <ur5e_...>` anywhere under `packages/` |
+| I3 | No external robot-controller code coupling | Boundary to any controller workspace is TF2 frames + action interfaces only | `find_package(<robot>_*)`, `import <robot>_*`, `#include <<robot>_...>` anywhere under `packages/` |
 | I4 | Multi-camera path is unified | N=1 is "one-camera multi-camera" — single parameterized code path | `if num_cameras == 1`, `if N == 1`, `if len(cameras) == 1` in launch / fusion code |
 | I5 | Optional deps have fallbacks | TEASER++, Ceres, GTSAM must be skippable without breaking build/run | `find_package(<opt> REQUIRED)` for TEASER++ / Ceres / GTSAM; missing `if(<opt>_FOUND)` guard |
-| I6 | `perception_msgs` is the only shared interface | Cross-workspace ABI — silent drift breaks `ur5e_ws/` consumers | Field added/renamed/removed in `.msg`/`.srv`/`.action` without a `docker compose build` + consumer audit |
+| I6 | `perception_msgs` is the only shared interface | Cross-workspace ABI — silent drift breaks downstream consumers | Field added/renamed/removed in `.msg`/`.srv`/`.action` without a `docker compose build` + consumer audit |
 | I7 | Control-path QoS = BEST_EFFORT + depth 1 | Stale pose data is worse than none | `RELIABLE` or `KEEP_ALL` on `/pose_filter/*`, `/smoother/*`, `/associated/*`, `/merged/*` |
 | I8 | GPU device resolved through `resolve_torch_device()` only | Dev-PC ↔ exec-PC CUDA mismatches must fall back to CPU with a single WARN, not crash inside model.forward | `device='cuda'` / `device='cuda:0'` passed straight to `.to()` / `build_sam2()` / ultralytics without going through `perception_launch_utils.resolve_torch_device` first |
 | I9 | Per-host param tuning lives in `host_profiles/`, never in code branches | Branching by VRAM/host class in launch or backend code recreates the I4 / anti-pattern (g) trap; profiles isolate it to YAML | `if vram <`, `if cuda_available:`, `if profile_name ==` outside `perception_launch_utils.host_profile`; new `dev_*` / `prod_*` constants hardcoded in launch files |
@@ -94,7 +94,7 @@ What to run to confirm a change is OK. Per change-type:
 |-------------|-----------|
 | C++ code in any package | `colcon build --packages-select <pkg>` → `colcon test --packages-select <pkg>` → `colcon test-result --verbose` |
 | Python node (Phase 4 or bringup helper) | Package's own `pytest` suite (e.g. `perception_launch_utils`). **TODO: no repo-wide ruff/mypy config — add when lint infra lands.** |
-| `perception_msgs` .msg/.srv/.action | Above **plus** `COMPOSE_BAKE=true docker compose -f docker/docker-compose.yml build` **plus** rebuild every downstream consumer (host + `ur5e_ws/`) |
+| `perception_msgs` .msg/.srv/.action | Above **plus** `COMPOSE_BAKE=true docker compose -f docker/docker-compose.yml build` **plus** rebuild every downstream consumer (host + any external controller workspace) |
 | Launch / config YAML | `ros2 launch <pkg> <launch.py> --print` dry-run + short smoke run + `ros2 topic list` sanity |
 | Filter / estimator parameters (pose_filter_cpp, pose_graph_smoother) | Existing gtests cover logic. **TODO: no bag-based regression harness — parameter tuning is currently visual-inspection only.** |
 | Docker image content | `docker compose build <service>` then `docker compose run --rm <service> ros2 node list` |
@@ -110,8 +110,8 @@ Stop and check with the user before proceeding when any of these apply.
 
 | Situation | Why |
 |-----------|-----|
-| `perception_msgs` modification needed | I6 — cross-workspace ABI; `ur5e_ws/` consumers must be rebuilt in lockstep |
-| New `ur5e_ws/` code dep seems needed | I3 — see if TF2/action routing can solve it first |
+| `perception_msgs` modification needed | I6 — cross-workspace ABI; downstream consumers must be rebuilt in lockstep |
+| New external robot-controller code dep seems needed | I3 — see if TF2/action routing can solve it first |
 | User asks to "implement Phase 4 node X" | All 5 already ship; clarify intent — tuning? live-run help? new feature on top? |
 | Optional dep's fallback needs removing | I5 — either commit to the hard dep (with install-script change) or keep fallback |
 | Code-path needs to branch on camera count | I4 — the architecture says one path parameterized by config; ask why the config path fails |
@@ -133,8 +133,8 @@ a. **"It's already implemented" oversight** — Symptom: agent re-implements a P
 b. **Silent ABI skew after `perception_msgs` edit** — Symptom: host publisher and container
    subscriber disagree on a field, topic looks connected but messages are dropped. Cause:
    `docker compose build` skipped after editing `.msg`/`.srv`/`.action`. Detection: after
-   any `.msg`/`.srv`/`.action` change, you **must** run `docker compose build`; audit `ur5e_ws/`
-   consumers too (I6). Recovery: rebuild `msgs-builder` stage + every runtime stage.
+   any `.msg`/`.srv`/`.action` change, you **must** run `docker compose build`; audit any
+   downstream consumers too (I6). Recovery: rebuild `msgs-builder` stage + every runtime stage.
 
 c. **QoS-mismatch silent disconnect** — Symptom: topic is listed by `ros2 topic list` but
    `ros2 topic echo` shows nothing. Cause: publisher `RELIABLE` + subscriber `BEST_EFFORT` (or
@@ -230,9 +230,12 @@ p. **Host torch CUDA build mismatched to NVIDIA driver** — Symptom: `yolo_byte
    a CUDA-12.8 / driver 570 box.) Detection: compare `python -c "import torch; print(
    torch.__version__, torch.version.cuda)"` against `nvidia-smi`'s `CUDA Version:` line,
    or check the `preflight:` block at the top of any launch (`perception_system.launch.py`
-   prints it by default). Recovery, top to bottom: (1) install with the right
-   `PERSPECTIVE_TORCH_CUDA` (`cu126` default / `cu128` / `cu130` / `cpu`) — see
-   `docs/installation.md`; (2) at runtime, GPU-using nodes already route through
+   prints it by default). Recovery, top to bottom: (1) `install_host.sh` now
+   auto-picks the cuXXX wheel from `nvidia-smi`'s `CUDA Version:` line
+   (12.6→cu126, 12.8→cu128, 13.x→cu130, no GPU→cpu) — re-run install if a
+   prior run was done before this auto-detect existed; override only when
+   needed via `PERSPECTIVE_TORCH_CUDA=cu126|cu128|cu130|cpu` (see
+   `docs/installation.md`); (2) at runtime, GPU-using nodes already route through
    `perception_launch_utils.resolve_torch_device()` (Invariant I8) which probes a 1-element
    CUDA tensor at load() and falls back to CPU with a single WARN; (3) `host_profile:=cpu_only`
    forces every Phase 4 backend onto its mock for headless / CI runs.
@@ -243,7 +246,7 @@ Detailed package table: [docs/architecture.md#packages-18-total](./docs/architec
 Quick mental map for navigation:
 
 - `packages/interfaces/perception_msgs/` — every message / service / action. Changes here
-  cascade to `ur5e_ws/` and Docker images (I6).
+  cascade to downstream consumers and Docker images (I6).
 - `packages/bringup/perception_bringup/` — system launches (`perception_system.launch.py`,
   `phase1_bringup.launch.py`) + `config/camera_config*.yaml`. Start here when hunting
   "how does the pipeline wire together."
@@ -277,7 +280,8 @@ source .venv/bin/activate                      # ultralytics & friends
 # Phase 4 Docker images
 COMPOSE_BAKE=true docker compose -f docker/docker-compose.yml build
 
-# Pin the host torch wheel to the deployed driver's CUDA (anti-pattern p):
+# Host torch wheel auto-picks cuXXX from nvidia-smi (anti-pattern p);
+# override only when needed:
 PERSPECTIVE_TORCH_CUDA=cu128 ./src/perspective_grasp/scripts/install_host.sh
 # Override host profile for a launch (default = auto):
 ros2 launch perception_bringup perception_system.launch.py host_profile:=dev_8gb
@@ -324,7 +328,6 @@ Build internals, test breakdown by package, Release toggles, Docker rebuild reci
 ## 11. Workspace Paths
 
 - This repo: `/home/junho/ros2_ws/perspective_ws/src/perspective_grasp/`
-- Controller (separate workspace — no code coupling, see I3): `/home/junho/ros2_ws/ur5e_ws/src/ur5e-rt-controller/`
 - ROS 2: `/opt/ros/jazzy/`
 - Memory: `/home/junho/.claude/projects/-home-junho-ros2-ws-perspective-ws-src-perspective-grasp/memory/`
 

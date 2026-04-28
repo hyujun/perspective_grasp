@@ -171,28 +171,83 @@ install_host_python() {
     # hand). Fresh PCs are unaffected.
     #
     # PERSPECTIVE_TORCH_CUDA picks which torch wheel index to use. Map:
-    #   cu126 (default)  matches Phase 4 Docker baseline; works on driver 560+
+    #   cu126            matches Phase 4 Docker baseline; works on driver 560+
     #   cu128            for driver 570+/CUDA 12.8 hosts (e.g. RTX 40-series boxes)
     #   cu130            for driver 580+/CUDA 13.x hosts
     #   cpu              for headless CI / no GPU
+    # When unset, _detect_torch_cuda probes nvidia-smi and picks the matching
+    # cuXXX (or cpu) automatically. Explicit env var still wins — it's the
+    # escape hatch for "I know what I want" cases (e.g. forcing cpu for CI).
     # CLAUDE.md anti-pattern (p) is the bug this exists to prevent.
-    local torch_cuda="${PERSPECTIVE_TORCH_CUDA:-cu126}"
+    local torch_cuda
+    if [ -n "${PERSPECTIVE_TORCH_CUDA:-}" ]; then
+        torch_cuda="$PERSPECTIVE_TORCH_CUDA"
+        echo ">>> PERSPECTIVE_TORCH_CUDA='$torch_cuda' (explicit override)"
+    else
+        torch_cuda="$(_detect_torch_cuda)"
+        echo ">>> PERSPECTIVE_TORCH_CUDA unset — auto-detected '$torch_cuda' from nvidia-smi"
+    fi
     case "$torch_cuda" in
         cu126|cu128|cu130|cpu) ;;
         *)
             echo "ERROR: PERSPECTIVE_TORCH_CUDA='$torch_cuda' not supported." >&2
-            echo "       Use one of: cu126 (default), cu128, cu130, cpu." >&2
+            echo "       Use one of: cu126, cu128, cu130, cpu." >&2
             return 1
             ;;
     esac
     local torch_index="https://download.pytorch.org/whl/${torch_cuda}"
-    echo ">>> torch wheel index: $torch_index (PERSPECTIVE_TORCH_CUDA=$torch_cuda)"
+    echo ">>> torch wheel index: $torch_index"
     pip install --no-user --upgrade \
         --extra-index-url "$torch_index" \
         -r "$_COMMON_SCRIPT_DIR/requirements-host.txt"
     pip uninstall -y opencv-python >/dev/null 2>&1 || true
 
     _verify_torch_install "$torch_cuda"
+}
+
+# Pick a cuXXX wheel index by parsing `nvidia-smi`'s "CUDA Version:" line
+# (the runtime CUDA the deployed driver advertises). Prints the chosen tag
+# (cu126 / cu128 / cu130 / cpu) on stdout — never fails: if nvidia-smi is
+# missing or unparseable, we fall back to cu126 (the Phase 4 Docker baseline,
+# which works on the broadest range of supported drivers). Diagnostics go to
+# stderr so the stdout capture stays clean.
+#
+# Mapping rationale (matches _verify_torch_install's WARNING text and
+# docs/installation.md): the CUDA Version reported by nvidia-smi is the max
+# runtime the driver supports, so a wheel built for that exact version (or
+# lower) will work. We pick the highest cuXXX <= reported.
+_detect_torch_cuda() {
+    local nvsmi
+    nvsmi="$(command -v nvidia-smi || true)"
+    if [ -z "$nvsmi" ]; then
+        echo "nvidia-smi not found — assuming no GPU, picking 'cpu'." >&2
+        echo "cpu"
+        return 0
+    fi
+    # `nvidia-smi` (no flags) prints a header containing e.g.
+    #   "| NVIDIA-SMI 570.86.15  Driver Version: 570.86.15  CUDA Version: 12.8 |"
+    # The query-gpu form does not expose CUDA Version, so we parse the header.
+    local raw cuda_ver
+    raw="$("$nvsmi" 2>/dev/null | grep -oE 'CUDA Version: *[0-9]+\.[0-9]+' | head -n1 || true)"
+    cuda_ver="${raw##*: }"
+    if [ -z "$cuda_ver" ]; then
+        echo "nvidia-smi present but 'CUDA Version' line not found — falling back to cu126." >&2
+        echo "cu126"
+        return 0
+    fi
+    echo "nvidia-smi reports CUDA Version: $cuda_ver" >&2
+    # Compare as "major*100 + minor" so 12.10 > 12.8 sorts correctly.
+    local major minor score
+    major="${cuda_ver%%.*}"
+    minor="${cuda_ver##*.}"
+    score=$(( 10#$major * 100 + 10#$minor ))
+    if   [ "$score" -ge 1300 ]; then echo "cu130"
+    elif [ "$score" -ge 1208 ]; then echo "cu128"
+    elif [ "$score" -ge 1206 ]; then echo "cu126"
+    else
+        echo "Driver-advertised CUDA $cuda_ver is below cu126 — picking 'cpu'." >&2
+        echo "cpu"
+    fi
 }
 
 # Probe the freshly-installed torch and warn if its CUDA build cannot

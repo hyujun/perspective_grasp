@@ -179,7 +179,7 @@ These have fallbacks. Packages must build and run sensibly without them.
 
 ## Cross-workspace boundary
 
-The UR5e controller lives in a separate colcon workspace (e.g. `~/ros2_ws/ur5e_ws/`). The two workspaces share:
+An external robot-controller workspace integrates with this repo as a downstream consumer. The two workspaces share:
 
 - **TF2 frames**: `ur5e_base_link` and related chain
 - **Action interfaces**: `PlanGrasp`, `AnalyzeScene`
