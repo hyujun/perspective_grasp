@@ -39,7 +39,10 @@ rviz = share_file('perception_debug_visualizer', 'rviz', 'debug_view.rviz')
 
 Absolute path to `<ws>/src/perspective_grasp`. Resolves via the anchor
 package's installed `share/` dir (walks up 4 levels). Override with
-`$PERSPECTIVE_GRASP_REPO_ROOT`.
+`$PERSPECTIVE_GRASP_REPO_ROOT`. If the source folder was renamed (e.g. on
+a deployment PC) and the env var is unset, the fallback path will not
+exist and the call raises `FileNotFoundError` with a hint pointing at
+the env var — set it from `.env.live` to recover.
 
 ### `workspace_models_dir(anchor_pkg='perception_bringup') -> str`
 

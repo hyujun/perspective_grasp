@@ -5,6 +5,7 @@
 import os
 from unittest.mock import patch
 
+import pytest
 from launch.actions import DeclareLaunchArgument
 
 from perception_launch_utils import (
@@ -77,10 +78,31 @@ def test_repo_root_env_override():
 
 
 @patch('perception_launch_utils.paths.get_package_share_directory')
-def test_repo_root_walks_up_from_share(mock_share, monkeypatch):
+def test_repo_root_walks_up_from_share(mock_share, tmp_path, monkeypatch):
     monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
-    mock_share.return_value = '/ws/install/perception_bringup/share/perception_bringup'
-    assert repo_root() == '/ws/src/perspective_grasp'
+    ws = tmp_path / 'ws'
+    repo = ws / 'src' / 'perspective_grasp'
+    repo.mkdir(parents=True)
+    mock_share.return_value = str(
+        ws / 'install' / 'perception_bringup' / 'share' / 'perception_bringup')
+    assert repo_root() == str(repo)
+
+
+@patch('perception_launch_utils.paths.get_package_share_directory')
+def test_repo_root_raises_when_fallback_missing(mock_share, tmp_path,
+                                                monkeypatch):
+    """If the source folder was renamed, fallback should raise with a hint
+    pointing at the env-var override."""
+    monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
+    ws = tmp_path / 'ws'
+    # Simulate exec PC where source was renamed: install tree exists but
+    # ws/src/perspective_grasp does not.
+    (ws / 'install' / 'perception_bringup' / 'share' /
+     'perception_bringup').mkdir(parents=True)
+    mock_share.return_value = str(
+        ws / 'install' / 'perception_bringup' / 'share' / 'perception_bringup')
+    with pytest.raises(FileNotFoundError, match='PERSPECTIVE_GRASP_REPO_ROOT'):
+        repo_root()
 
 
 @patch.dict(os.environ, {'PERSPECTIVE_GRASP_MODELS_DIR': '/elsewhere/models'},
@@ -90,11 +112,15 @@ def test_workspace_models_dir_env_override():
 
 
 @patch('perception_launch_utils.paths.get_package_share_directory')
-def test_workspace_models_dir_default(mock_share, monkeypatch):
+def test_workspace_models_dir_default(mock_share, tmp_path, monkeypatch):
     monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
     monkeypatch.delenv('PERSPECTIVE_GRASP_MODELS_DIR', raising=False)
-    mock_share.return_value = '/ws/install/perception_bringup/share/perception_bringup'
-    assert workspace_models_dir() == '/ws/src/perspective_grasp/models'
+    ws = tmp_path / 'ws'
+    repo = ws / 'src' / 'perspective_grasp'
+    repo.mkdir(parents=True)
+    mock_share.return_value = str(
+        ws / 'install' / 'perception_bringup' / 'share' / 'perception_bringup')
+    assert workspace_models_dir() == str(repo / 'models')
 
 
 def test_workspace_runtime_outputs_dir_env_override(tmp_path, monkeypatch):

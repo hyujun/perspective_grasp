@@ -24,17 +24,19 @@ WS_DIR="$(cd "$_VENV_HELPER_DIR/../../.." && pwd)"
 VENV_DIR="$WS_DIR/.venv"
 export WS_DIR VENV_DIR
 
-# Sanity-check the inferred workspace layout. If the repo was cloned somewhere
-# other than <ws>/src/perspective_grasp/, WS_DIR resolves to a parent that is
-# not a colcon workspace and the venv ends up in the wrong place — fail loud
-# rather than silently creating .venv in someone's home directory. Lives in
-# the function (not at module top-level) so a `source` from a wrong CWD does
-# not abort the caller before any error message reaches the terminal.
+# Sanity-check the inferred workspace layout. The repo folder name itself is
+# not enforced (exec PC may rename it) — we only require that this script lives
+# three levels below a directory containing src/, i.e. <ws>/src/<repo>/scripts/.
+# If WS_DIR resolves to a parent that is not a colcon workspace, the venv ends
+# up in the wrong place — fail loud rather than silently creating .venv in
+# someone's home directory. Lives in the function (not at module top-level) so
+# a `source` from a wrong CWD does not abort the caller before any error
+# message reaches the terminal.
 _check_ws_layout() {
     if [ ! -d "$WS_DIR/src" ]; then
         echo "ERROR: workspace layout invalid — expected $WS_DIR/src to exist." >&2
         echo "       Inferred WS_DIR=$WS_DIR" >&2
-        echo "       This repo must live at <colcon_ws>/src/perspective_grasp/." >&2
+        echo "       This repo must live at <colcon_ws>/src/<repo>/." >&2
         return 1
     fi
 }

@@ -240,6 +240,17 @@ p. **Host torch CUDA build mismatched to NVIDIA driver** — Symptom: `yolo_byte
    CUDA tensor at load() and falls back to CPU with a single WARN; (3) `host_profile:=cpu_only`
    forces every Phase 4 backend onto its mock for headless / CI runs.
 
+q. **Source folder renamed on exec PC + `PERSPECTIVE_GRASP_REPO_ROOT` unset** — Symptom:
+   launch fails with `FileNotFoundError: perception_launch_utils.repo_root() fallback path
+   does not exist: '<ws>/src/perspective_grasp'`. Cause: the dev PC's `paths.py` fallback
+   assumes `<ws>/src/perspective_grasp` literally; exec PC may host the source at a
+   different folder name. Detection: the error message itself names the env var. Recovery:
+   set `PERSPECTIVE_GRASP_REPO_ROOT` in `.env.live` (or shell) to the actual source path —
+   `repo_root()` returns the env var verbatim when present, so the literal folder name
+   becomes irrelevant. Same trick covers `PERSPECTIVE_GRASP_MODELS_DIR` /
+   `PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR` if those should not be derived from the repo
+   root.
+
 ## 7. Where Things Live (mental map)
 
 Detailed package table: [docs/architecture.md#packages-18-total](./docs/architecture.md#packages-18-total).

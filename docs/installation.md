@@ -22,7 +22,9 @@ Throughout these docs, `${ROS2_WS}` refers to **your** colcon workspace root —
 export ROS2_WS=~/ros2_ws/perspective_ws   # example — use whatever path you prefer
 ```
 
-The install/build/runtime shell scripts (`scripts/install_host.sh`, `scripts/install_dependencies.sh`, `build.sh`, `.env.live`) discover the workspace root from their own location, so they work with any layout that satisfies `${ROS2_WS}/src/perspective_grasp/`.
+The install/build/runtime shell scripts (`scripts/install_host.sh`, `scripts/install_dependencies.sh`, `build.sh`, `.env.live`) discover the workspace root from their own location, so they work with any layout that satisfies `${ROS2_WS}/src/<this-repo>/`.
+
+> **Folder name on a deployment PC.** The folder name `perspective_grasp/` is the dev-PC convention but is not load-bearing — the shell scripts resolve paths via `$(dirname "$BASH_SOURCE")` and don't read the folder name. The one Python touchpoint that *does* use the literal name is `perception_launch_utils.repo_root()`'s walk-up fallback. If the deployment PC clones this repo under a different folder name, set `PERSPECTIVE_GRASP_REPO_ROOT` (e.g. in `.env.live`) to the actual source path and the fallback is skipped entirely; otherwise launches will surface a clear `FileNotFoundError` naming the env var. Same trick applies to `PERSPECTIVE_GRASP_MODELS_DIR` / `PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR` if those should not be derived from the repo root.
 
 ## Clone
 

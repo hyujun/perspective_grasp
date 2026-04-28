@@ -29,10 +29,14 @@ def repo_root(anchor_pkg: str = 'perception_bringup') -> str:
     """Absolute path to the perspective_grasp source tree.
 
     Resolution order:
-    1. ``$PERSPECTIVE_GRASP_REPO_ROOT`` if set.
+    1. ``$PERSPECTIVE_GRASP_REPO_ROOT`` if set (returned as-is, no validation —
+       caller takes responsibility).
     2. Walk up 4 levels from ``share/<anchor_pkg>`` (the standard colcon
        ``install/<pkg>/share/<pkg>`` layout) to the colcon workspace, then
-       descend into ``src/perspective_grasp``.
+       descend into ``src/perspective_grasp``. The result is validated;
+       if the directory does not exist, raise with a hint to set the env
+       var (covers the case where the source folder was renamed on a
+       deployment PC).
 
     The anchor package must be installed (i.e., ``colcon build`` ran for it).
     Defaults to ``perception_bringup`` because every system launch already
@@ -43,7 +47,15 @@ def repo_root(anchor_pkg: str = 'perception_bringup') -> str:
         return env
     share = get_package_share_directory(anchor_pkg)
     ws_root = os.path.abspath(os.path.join(share, '..', '..', '..', '..'))
-    return os.path.join(ws_root, *_REPO_REL_FROM_WS)
+    fallback = os.path.join(ws_root, *_REPO_REL_FROM_WS)
+    if not os.path.isdir(fallback):
+        raise FileNotFoundError(
+            f"perception_launch_utils.repo_root() fallback path does not exist: "
+            f"{fallback!r}. The source folder may have been renamed from "
+            f"{_REPO_REL_FROM_WS[-1]!r}. Set ${_ENV_REPO_ROOT} to the actual "
+            f"source tree path (e.g. via .env.live)."
+        )
+    return fallback
 
 
 def workspace_models_dir(anchor_pkg: str = 'perception_bringup') -> str:
