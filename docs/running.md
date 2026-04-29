@@ -36,7 +36,10 @@ ros2 launch realsense2_camera rs_launch.py \
     camera_namespace:=/ \
     camera_name:=camera \
     pointcloud.enable:=true \
-    align_depth.enable:=true
+    align_depth.enable:=true \
+    rgb_camera.color_qos:=SENSOR_DATA \
+    depth_module.depth_qos:=SENSOR_DATA \
+    depth_module.infra_qos:=SENSOR_DATA
 ```
 
 `camera_namespace:=/` puts the driver at root (topics `/camera/...`). `ros2 launch` rejects empty argument values, so `camera_namespace:=''` will fail — use `/` for the root namespace.
