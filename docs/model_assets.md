@@ -130,13 +130,39 @@ export BUNDLESDF_WEIGHTS=${MODELS_ROOT}/bundlesdf
 
 ### 4.1 SAM2 — 단일 파일
 
-Meta FAIR 공식 배포. 인증/쿼터 없음.
+Meta FAIR 공식 배포. 인증/쿼터 없음. SAM 2.0 릴리즈 (`072824/`) 4가지 크기 모두 같은 베이스 URL에서 받는다 — pin된 SAM2 SHA (`2b90b9f5`, 2024-12) 가 2.0 API만 지원하므로 `sam2.1_*` 파일은 받아도 동작 안 함.
+
+| 변형 | 파일명 | 크기 | 매칭되는 `model_config` |
+|---|---|---|---|
+| tiny | `sam2_hiera_tiny.pt` | ~150MB | `sam2_hiera_t.yaml` |
+| small | `sam2_hiera_small.pt` | ~180MB | `sam2_hiera_s.yaml` |
+| base_plus | `sam2_hiera_base_plus.pt` | ~320MB | `sam2_hiera_b+.yaml` |
+| large (default) | `sam2_hiera_large.pt` | ~900MB | `sam2_hiera_l.yaml` |
+
+**Large (default)** — `sam2_params.yaml` 의 `model_checkpoint` / `model_config` 가 그대로 가리키는 조합. 추가 설정 불필요.
 
 ```bash
 cd ${ROS2_WS}/src/perspective_grasp/models/sam2
 wget https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt
 ls -lh sam2_hiera_large.pt        # ~900MB 확인
 ```
+
+**Small (또는 tiny / base_plus)** — VRAM/지연이 빡빡할 때. 파일명 그대로 두고 yaml의 두 파라미터를 같이 바꿔야 한다 (한 쪽만 바꾸면 build_sam2 가 mismatch 로 죽음).
+
+```bash
+cd ${ROS2_WS}/src/perspective_grasp/models/sam2
+wget https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt
+ls -lh sam2_hiera_small.pt        # ~180MB 확인
+```
+
+그리고 `packages/phase4_refinement/sam2_instance_segmentor/config/sam2_params.yaml` 에서:
+
+```yaml
+model_checkpoint: /ws/models/sam2/sam2_hiera_small.pt   # large → small
+model_config:     sam2_hiera_s.yaml                     # _l.yaml → _s.yaml
+```
+
+`model_config` 값은 컨테이너 안 SAM2 패키지에 포함된 hydra config 이름 — 호스트에 별도 파일 배치 불필요.
 
 ### 4.2 FoundationPose — refiner + scorer 가중치
 
@@ -296,7 +322,7 @@ docker compose -f docker/docker-compose.yml run --rm bundlesdf \
 cd ${ROS2_WS}/src/perspective_grasp
 
 # SAM2
-ls -lh models/sam2/sam2_hiera_large.pt
+ls -lh models/sam2/sam2_hiera_*.pt   # large 또는 tiny/small/base_plus 중 yaml과 매칭되는 파일
 
 # FoundationPose
 find models/foundationpose -type f | sort
@@ -326,5 +352,5 @@ ls -la models/bundlesdf/out
 2. **happypose CLI는 컨테이너 내부에서 실행** — 호스트 설치 시 의존성 충돌 위험.
 3. **메시 파일명 ↔ YOLO 클래스명 매칭**이 가장 자주 실수하는 포인트. YOLO `data.yaml`의 `names` 리스트를 그대로 (소문자, 공백은 underscore) 사용.
 4. **mesh 단위 확인 누락 시 pose가 1000배 어긋남**. 첫 검증 전 trimesh로 extents 출력 확인.
-5. **SAM2 체크포인트 파일명 고정** — `sam2_hiera_large.pt`. 다른 버전 원하면 params yaml 직접 수정.
+5. **SAM2 체크포인트와 hydra config 짝 맞추기** — yaml의 `model_checkpoint` 와 `model_config` 는 같은 변형 (tiny/small/base_plus/large) 을 가리켜야 한다. 한쪽만 바꾸면 build_sam2 가 weight shape mismatch 로 죽는다. SAM 2.1 (`sam2.1_*`) 은 현재 pin된 SHA 에서 미지원.
 6. **MegaPose RGBD variant는 현재 백엔드가 reject** — RGB variant만 사용 가능.
