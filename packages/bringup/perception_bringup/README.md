@@ -17,6 +17,7 @@ config-path / camera-config / lifecycle wiring (see CLAUDE.md §9).
 |-----|---------|--------|
 | `camera_config` | `''` | Path to a `camera_config*.yaml`. Empty → 1-cam fallback. Otherwise spawns one per-camera subtree per entry. |
 | `host_profile` | `auto` | `auto` / `dev_8gb` / `prod_16gb` / `cpu_only`. Selects parameter overrides keyed by node name; YAMLs ship with `perception_launch_utils` ([`host_profiles/`](../../infrastructure/perception_launch_utils/host_profiles/)). Env override: `PERSPECTIVE_HOST_PROFILE`. |
+| `image_qos` | `reliable` | YOLO image subscription QoS. Default matches `ros-jazzy-realsense2-camera 4.57.7` (publishes RELIABLE). Pass `sensor_data` for drivers that publish with `SensorDataQoS` (BEST_EFFORT). |
 | `preflight` | `true` | Print a `preflight:` block (driver / torch / CUDA versions) at launch start. Set `false` or `PERSPECTIVE_PREFLIGHT_SKIP=1` to bypass. |
 | `preflight_strict` | `false` | When the probe reports a hard error, abort launch instead of warning. |
 

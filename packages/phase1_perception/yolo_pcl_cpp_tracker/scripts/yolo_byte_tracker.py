@@ -10,7 +10,7 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from sensor_msgs.msg import Image
 from perception_msgs.msg import Detection, DetectionArray
 from cv_bridge import CvBridge
@@ -38,6 +38,12 @@ class YoloByteTrackerNode(Node):
         # 'cuda:N', numeric 'N', or 'cpu'.
         self.declare_parameter('device', 'auto')
         self.declare_parameter('image_topic', 'camera/color/image_raw')
+        # Image subscription QoS. Default 'reliable' matches ros-jazzy
+        # realsense2_camera 4.57.7 (its rs_launch.py exposes no *_qos params,
+        # so it publishes RELIABLE; a BEST_EFFORT subscriber silently drops
+        # frames). Switch to 'sensor_data' for cameras that publish with
+        # SensorDataQoS (BEST_EFFORT).
+        self.declare_parameter('image_qos', 'reliable')
         self.declare_parameter('track_buffer', 30)
         self.declare_parameter('track_thresh', 0.5)
         self.declare_parameter('match_thresh', 0.8)
@@ -49,6 +55,7 @@ class YoloByteTrackerNode(Node):
         self.device = resolve_torch_device(
             requested_device, self.get_logger()).device
         image_topic = self.get_parameter('image_topic').value
+        image_qos_name = self.get_parameter('image_qos').value
 
         # CV Bridge
         self.bridge = CvBridge()
@@ -64,23 +71,44 @@ class YoloByteTrackerNode(Node):
                 'ultralytics not installed! pip3 install ultralytics')
             self.model = None
 
-        # QoS: best effort, latest only
-        sensor_qos = QoSProfile(
+        # Subscription QoS: matches the camera driver. Publisher QoS stays
+        # BEST_EFFORT/depth 1 so downstream stays on the control-path policy
+        # (CLAUDE.md I7).
+        sub_qos = self._resolve_image_qos(image_qos_name)
+        pub_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
-            depth=1
+            depth=1,
         )
 
         # Subscriber
         self.image_sub = self.create_subscription(
-            Image, image_topic, self.image_callback, sensor_qos)
+            Image, image_topic, self.image_callback, sub_qos)
 
         # Publisher
         self.det_pub = self.create_publisher(
-            DetectionArray, 'yolo/detections', sensor_qos)
+            DetectionArray, 'yolo/detections', pub_qos)
 
         self.get_logger().info(
-            f'YoloByteTracker ready. Subscribing to {image_topic}')
+            f'YoloByteTracker ready. Subscribing to {image_topic} '
+            f'(qos={image_qos_name})')
+
+    def _resolve_image_qos(self, name: str) -> QoSProfile:
+        normalized = (name or '').strip().lower()
+        if normalized in ('sensor_data', 'best_effort', 'be'):
+            reliability = ReliabilityPolicy.BEST_EFFORT
+        elif normalized in ('reliable', 'system_default', 'default'):
+            reliability = ReliabilityPolicy.RELIABLE
+        else:
+            self.get_logger().warn(
+                f"Unknown image_qos '{name}', falling back to sensor_data")
+            reliability = ReliabilityPolicy.BEST_EFFORT
+        return QoSProfile(
+            reliability=reliability,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=DurabilityPolicy.VOLATILE,
+        )
 
     def _resolve_model_location(self, model_path: str, models_dir: str) -> str:
         # Ultralytics downloads bare filenames to CWD. Redirect that to models_dir

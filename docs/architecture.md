@@ -164,7 +164,8 @@ Switched via `perception_meta_controller` (`SetMode` service). See [running.md](
 
 ## QoS
 
-- **Control-path topics** (poses, TF): `BEST_EFFORT` + depth 1. A stale sample is worthless; dropping is preferable to queueing.
+- **Control-path topics** (poses, TF, internal `yolo/detections` / `sam2/masks` / `pose_filter/*` / `smoother/*` publishers): `BEST_EFFORT` + depth 1 (Invariant I7). A stale sample is worthless; dropping is preferable to queueing.
+- **Camera-image input subscription**: matches the camera driver. `ros-jazzy-realsense2-camera 4.57.7` publishes `RELIABLE`, so the YOLO tracker defaults `image_qos:=reliable`. Pass `image_qos:=sensor_data` to the bringup / phase 1 / tracker launches when the driver uses `SensorDataQoS` (BEST_EFFORT). This is a publisher↔subscriber boundary, separate from the internal control-path policy.
 - **Diagnostic / debug topics**: default reliable QoS.
 
 ## Optional dependencies

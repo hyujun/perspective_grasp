@@ -9,6 +9,12 @@
 
 numpy<2
 ultralytics==8.4.40
+# ByteTrack (ultralytics' default tracker) needs lap. Without this pin
+# ultralytics auto-pip-installs it on first track() call inside the
+# yolo_byte_tracker node — the install succeeds but emits "Restart runtime
+# for updates to take effect", and the first session's tracking is unreliable
+# until restart. Pinning here makes the install reproducible.
+lap>=0.5.12
 
 # torch + torchvision are pinned so a fresh install can never end up with a
 # wheel built for a CUDA version newer than the deployed NVIDIA driver

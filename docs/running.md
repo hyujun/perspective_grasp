@@ -36,13 +36,12 @@ ros2 launch realsense2_camera rs_launch.py \
     camera_namespace:=/ \
     camera_name:=camera \
     pointcloud.enable:=true \
-    align_depth.enable:=true \
-    rgb_camera.color_qos:=SENSOR_DATA \
-    depth_module.depth_qos:=SENSOR_DATA \
-    depth_module.infra_qos:=SENSOR_DATA
+    align_depth.enable:=true
 ```
 
 `camera_namespace:=/` puts the driver at root (topics `/camera/...`). `ros2 launch` rejects empty argument values, so `camera_namespace:=''` will fail — use `/` for the root namespace.
+
+> **QoS note.** `ros-jazzy-realsense2-camera 4.57.7` (the apt package on Ubuntu 24.04) publishes `RELIABLE` and its `rs_launch.py` exposes no `*_qos` arguments. The Phase 1 YOLO tracker therefore defaults its image subscription to `image_qos:=reliable` to match. If you swap in a camera driver that publishes with `SensorDataQoS` (BEST_EFFORT), pass `image_qos:=sensor_data` to `perception_system.launch.py` / `phase1_bringup.launch.py` / `tracker.launch.py`. Mismatched QoS = silently dropped frames (anti-pattern (c)).
 
 **Multi-camera** — one driver per camera, namespace must match the YAML:
 
@@ -215,6 +214,7 @@ ros2 launch perception_bringup perception_system.launch.py \
 | Arg | Default | Effect |
 |-----|---------|--------|
 | `host_profile` | `auto` | Picks parameter overrides from [`host_profiles/`](../packages/infrastructure/perception_launch_utils/host_profiles/) (shipped with `perception_launch_utils`; `auto` selects via `nvidia-smi` total VRAM). Valid: `auto` / `dev_8gb` / `prod_16gb` / `cpu_only`. Env override: `PERSPECTIVE_HOST_PROFILE`. |
+| `image_qos` | `reliable` | YOLO image subscription QoS. Default matches `ros-jazzy-realsense2-camera 4.57.7` (publishes RELIABLE). Pass `sensor_data` for drivers that publish with `SensorDataQoS`. |
 | `preflight` | `true` | Runs a one-shot driver/torch/CUDA probe at launch and logs a `preflight:` block. Set to `false` (or env `PERSPECTIVE_PREFLIGHT_SKIP=1`) to bypass. |
 | `preflight_strict` | `false` | When the probe reports a hard error, abort launch instead of continuing with a warning. |
 

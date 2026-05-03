@@ -26,10 +26,11 @@ from perception_launch_utils import (
     overrides_for_node,
     preflight_launch_action,
     resolve_host_profile,
+    workspace_models_dir,
 )
 
 
-def _per_camera_nodes(ns: str, tracker_config: str, profile):
+def _per_camera_nodes(ns: str, tracker_config: str, profile, image_qos):
     """Build the per-camera subtree (YOLO + PCL-ICP pose estimator).
 
     Empty ``ns`` (1-cam) → nodes live in the root namespace.
@@ -39,12 +40,19 @@ def _per_camera_nodes(ns: str, tracker_config: str, profile):
     after the base config so the host profile wins on conflict.
     """
     yolo_overrides = overrides_for_node(profile, 'yolo_byte_tracker')
+    yolo_params = [{
+        'model_path': 'yolov8n.pt',
+        'models_dir': workspace_models_dir('perception_bringup'),
+        'image_qos': image_qos,
+    }]
+    if yolo_overrides:
+        yolo_params.append(yolo_overrides)
     nodes = [
         Node(
             package='yolo_pcl_cpp_tracker',
             executable='yolo_byte_tracker.py',
             name='yolo_byte_tracker',
-            parameters=[yolo_overrides] if yolo_overrides else [],
+            parameters=yolo_params,
             output='screen'),
         Node(
             package='yolo_pcl_cpp_tracker',
@@ -65,6 +73,7 @@ def _spawn_nodes(context, *args, **kwargs):
 
     profile_name = LaunchConfiguration('host_profile').perform(context)
     profile = resolve_host_profile(profile_name)
+    image_qos = LaunchConfiguration('image_qos').perform(context)
 
     tracker_config = config_path('yolo_pcl_cpp_tracker', 'tracker_params.yaml')
     filter_config = config_path('pose_filter_cpp', 'filter_params.yaml')
@@ -82,7 +91,7 @@ def _spawn_nodes(context, *args, **kwargs):
     # Per-camera subtrees
     for cam in cfg.cameras:
         actions.extend(
-            _per_camera_nodes(cam.namespace, tracker_config, profile))
+            _per_camera_nodes(cam.namespace, tracker_config, profile, image_qos))
 
     # Shared fusion / filtering / smoothing (single instance, global topics)
     actions.append(Node(
@@ -121,6 +130,17 @@ def generate_launch_description():
             ),
         ),
         declare_host_profile_arg(),
+        DeclareLaunchArgument(
+            'image_qos',
+            default_value='reliable',
+            description=(
+                "QoS for the YOLO image subscription. Default 'reliable' "
+                'matches ros-jazzy realsense2_camera 4.57.7 (its rs_launch.py '
+                'exposes no *_qos params, so it publishes RELIABLE). Switch '
+                "to 'sensor_data' (BEST_EFFORT) for cameras that publish with "
+                'SensorDataQoS.'
+            ),
+        ),
         DeclareLaunchArgument(
             'preflight',
             default_value='true',
