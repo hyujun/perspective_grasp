@@ -16,7 +16,7 @@ config-path / camera-config / lifecycle wiring (see CLAUDE.md §9).
 | Arg | Default | Effect |
 |-----|---------|--------|
 | `camera_config` | `''` | Path to a `camera_config*.yaml`. Empty → 1-cam fallback. Otherwise spawns one per-camera subtree per entry. |
-| `host_profile` | `auto` | `auto` / `dev_8gb` / `prod_16gb` / `cpu_only`. Selects parameter overrides from [`config/host_profiles/`](config/host_profiles/) keyed by node name. Env override: `PERSPECTIVE_HOST_PROFILE`. |
+| `host_profile` | `auto` | `auto` / `dev_8gb` / `prod_16gb` / `cpu_only`. Selects parameter overrides keyed by node name; YAMLs ship with `perception_launch_utils` ([`host_profiles/`](../../infrastructure/perception_launch_utils/host_profiles/)). Env override: `PERSPECTIVE_HOST_PROFILE`. |
 | `preflight` | `true` | Print a `preflight:` block (driver / torch / CUDA versions) at launch start. Set `false` or `PERSPECTIVE_PREFLIGHT_SKIP=1` to bypass. |
 | `preflight_strict` | `false` | When the probe reports a hard error, abort launch instead of warning. |
 
@@ -41,8 +41,13 @@ PERSPECTIVE_HOST_PROFILE=cpu_only PERSPECTIVE_PREFLIGHT_SKIP=1 \
 | [`config/camera_config.yaml`](config/camera_config.yaml) | 3-camera default (`/cam0` / `/cam1` / `/cam2`) |
 | [`config/camera_config_1cam.yaml`](config/camera_config_1cam.yaml) | Single camera (root namespace, no fan-out) |
 | [`config/camera_config_2cam.yaml`](config/camera_config_2cam.yaml) | 2-camera (`/cam0` + `/cam1`) |
-| [`config/host_profiles/`](config/host_profiles/) | Per-host parameter overrides (`dev_8gb` / `prod_16gb` / `cpu_only`) — see folder README |
 | [`config/cyclonedds_localhost.xml`](config/cyclonedds_localhost.xml) | XML peer config sourced by `.env.live` to lockstep host & Phase 4 containers on Cyclone DDS |
+
+Host-profile YAMLs (`dev_8gb` / `prod_16gb` / `cpu_only`) ship with
+`perception_launch_utils` at
+[`packages/infrastructure/perception_launch_utils/host_profiles/`](../../infrastructure/perception_launch_utils/host_profiles/),
+not under this package — co-located with the loader so Phase 4 Docker
+images don't need to install `perception_bringup` to resolve a profile.
 
 Robot-agnostic frame names live in `camera_config*.yaml`
 (`base`, `tool0`); the static TF from `ur5e_base_link` is applied

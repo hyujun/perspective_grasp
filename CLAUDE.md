@@ -251,6 +251,25 @@ q. **Source folder renamed on exec PC + `PERSPECTIVE_GRASP_REPO_ROOT` unset** �
    `PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR` if those should not be derived from the repo
    root.
 
+s. **Phase 4 launch crashing with "package 'perception_bringup' not found"** —
+   Symptom: `docker compose up sam2` (or foundationpose / cosypose / megapose /
+   bundlesdf) exits immediately with `[ERROR] [launch]: ... "package
+   'perception_bringup' not found, searching: ['/ws/install/<node>',
+   '/ws/install/perception_msgs', '/ws/install/perception_launch_utils',
+   '/opt/ros/jazzy']"`. Cause: `host_profile.py` used to look up profile
+   YAMLs via `get_package_share_directory('perception_bringup')`, but Phase 4
+   stages only install the node + `perception_msgs` + `perception_launch_utils`,
+   so the lookup failed before the launch file even ran (git log: profiles
+   were originally added in `e365a01`; relocated in this fix). Detection:
+   the error message names `perception_bringup` even though no launch file
+   in the chain imports `perception_bringup` directly. Recovery: profile
+   YAMLs now ship with `perception_launch_utils` at
+   `packages/infrastructure/perception_launch_utils/host_profiles/`. Any
+   future "host-shaped data needed inside Phase 4 containers" should land
+   in `perception_launch_utils` (already installed everywhere) rather than
+   `perception_bringup` — adding a new file under
+   `perception_bringup/config/` reintroduces this trap.
+
 ## 7. Where Things Live (mental map)
 
 Detailed package table: [docs/architecture.md#packages-18-total](./docs/architecture.md#packages-18-total).
@@ -333,8 +352,11 @@ Build internals, test breakdown by package, Release toggles, Docker rebuild reci
   files and inject them as node parameters. Override roots with
   `$PERSPECTIVE_GRASP_{REPO_ROOT,MODELS_DIR,RUNTIME_OUTPUTS_DIR}`.
 - **Host profiles**: dev↔exec PC param differences (8 GB vs 16 GB+ VRAM, mock vs real Phase 4
-  backends) live in `packages/bringup/perception_bringup/config/host_profiles/{dev_8gb,
-  prod_16gb,cpu_only}.yaml`. Launch files apply them via `overrides_for_node(profile, name)`
+  backends) live in `packages/infrastructure/perception_launch_utils/host_profiles/{dev_8gb,
+  prod_16gb,cpu_only}.yaml` (installed to `share/perception_launch_utils/host_profiles/`).
+  Co-located with the loader so Phase 4 Docker images — which install only
+  `perception_launch_utils` plus the node — can resolve a profile without pulling in
+  `perception_bringup`. Launch files apply them via `overrides_for_node(profile, name)`
   splatted *after* the base YAML in `parameters=[...]`. Profiles only swap parameters; never
   branch code paths (preserves I4).
 - Comments default to none; add only when the *why* is non-obvious (hidden constraint, subtle

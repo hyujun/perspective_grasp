@@ -101,7 +101,7 @@ Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per c
 
 ### Host profile overrides
 
-`host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name `cosypose_optimizer`. Profile YAMLs live at [`packages/bringup/perception_bringup/config/host_profiles/`](../../bringup/perception_bringup/config/host_profiles/); `cpu_only` flips this node's `backend` to `mock`. Overrides are appended last in `parameters=[...]` so they win on conflict.
+`host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name `cosypose_optimizer`. Profile YAMLs live at [`packages/infrastructure/perception_launch_utils/host_profiles/`](../../infrastructure/perception_launch_utils/host_profiles/); `cpu_only` flips this node's `backend` to `mock`. Overrides are appended last in `parameters=[...]` so they win on conflict.
 
 ## Dependencies
 

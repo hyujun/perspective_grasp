@@ -226,11 +226,14 @@ wiring (`preflight` / `preflight_strict` launch args).
 
 ### Host profiles — `resolve_host_profile()` / `declare_host_profile_arg()`
 
-Per-host parameter overrides live in
-`packages/bringup/perception_bringup/config/host_profiles/`. Three
-profiles ship: `dev_8gb`, `prod_16gb`, `cpu_only`. `auto` selects via
-`nvidia-smi` total VRAM (`< 12000 MiB → dev_8gb`,
-`≥ 12000 MiB → prod_16gb`, no GPU → `cpu_only`).
+Per-host parameter overrides ship with this package at
+[`host_profiles/`](./host_profiles/) (installed to
+`share/perception_launch_utils/host_profiles/`). Three profiles ship:
+`dev_8gb`, `prod_16gb`, `cpu_only`. `auto` selects via `nvidia-smi`
+total VRAM (`< 12000 MiB → dev_8gb`, `≥ 12000 MiB → prod_16gb`, no
+GPU → `cpu_only`). Co-locating the YAMLs with their loader keeps
+Phase 4 Docker images self-contained — they only need this package
+and their own node, not the full `perception_bringup` tree.
 
 ```python
 from perception_launch_utils import (

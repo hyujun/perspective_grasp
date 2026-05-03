@@ -100,7 +100,7 @@ Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per c
 
 ### Host profile overrides
 
-`host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name `megapose_tracker`. The `dev_8gb` profile shrinks `n_workers`/`bsz_images` for 8 GB-class boxes; `cpu_only` flips `backend` to `mock`. See [`config/host_profiles/`](../../bringup/perception_bringup/config/host_profiles/).
+`host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`) selects parameter overrides keyed by node name `megapose_tracker`. The `dev_8gb` profile shrinks `n_workers`/`bsz_images` for 8 GB-class boxes; `cpu_only` flips `backend` to `mock`. See [`host_profiles/`](../../infrastructure/perception_launch_utils/host_profiles/) (shipped with `perception_launch_utils`).
 
 ## Dependencies
 

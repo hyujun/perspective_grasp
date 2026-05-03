@@ -1,8 +1,12 @@
 # Host profiles
 
-Parameter overrides keyed by host class. Each profile lives next to
-`camera_config*.yaml` and is consumed by launches that import
-`perception_launch_utils.load_host_profile`.
+Parameter overrides keyed by host class. The YAMLs ship with
+`perception_launch_utils` (installed to
+`share/perception_launch_utils/host_profiles/`) and are consumed by
+launches that import `perception_launch_utils.load_host_profile`. They
+live with the launch util — not with `perception_bringup` — so Phase 4
+Docker images, which install only the launch util plus the node under
+test, can still resolve a profile.
 
 | Profile | Target | Picked when |
 |---------|--------|-------------|

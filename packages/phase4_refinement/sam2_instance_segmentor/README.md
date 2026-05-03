@@ -78,7 +78,7 @@ Pass `camera_config:=<yaml>` to the launch file to spawn one LifecycleNode per c
 
 ### Host profile overrides
 
-The launch accepts `host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`). Profile YAMLs live at [`packages/bringup/perception_bringup/config/host_profiles/`](../../bringup/perception_bringup/config/host_profiles/). For `sam2_segmentor`, the `dev_8gb` profile swaps the heavyweight `sam2_hiera_large.pt` checkpoint for the `_small` variant; `cpu_only` flips `backend` to `mock`. Overrides are appended last in `parameters=[...]`, so they win against both the package's default YAML and any per-camera topic remap.
+The launch accepts `host_profile:=<dev_8gb|prod_16gb|cpu_only|auto>` (default `auto`, env `PERSPECTIVE_HOST_PROFILE`). Profile YAMLs live at [`packages/infrastructure/perception_launch_utils/host_profiles/`](../../infrastructure/perception_launch_utils/host_profiles/) (installed to `share/perception_launch_utils/host_profiles/` so the Phase 4 image can resolve them with only `perception_launch_utils` installed). For `sam2_segmentor`, the `dev_8gb` profile swaps the heavyweight `sam2_hiera_large.pt` checkpoint for the `_small` variant; `cpu_only` flips `backend` to `mock`. Overrides are appended last in `parameters=[...]`, so they win against both the package's default YAML and any per-camera topic remap.
 
 ## Dependencies
 

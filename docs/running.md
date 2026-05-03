@@ -214,7 +214,7 @@ ros2 launch perception_bringup perception_system.launch.py \
 
 | Arg | Default | Effect |
 |-----|---------|--------|
-| `host_profile` | `auto` | Picks parameter overrides from [`config/host_profiles/`](../packages/bringup/perception_bringup/config/host_profiles/) (`auto` selects via `nvidia-smi` total VRAM). Valid: `auto` / `dev_8gb` / `prod_16gb` / `cpu_only`. Env override: `PERSPECTIVE_HOST_PROFILE`. |
+| `host_profile` | `auto` | Picks parameter overrides from [`host_profiles/`](../packages/infrastructure/perception_launch_utils/host_profiles/) (shipped with `perception_launch_utils`; `auto` selects via `nvidia-smi` total VRAM). Valid: `auto` / `dev_8gb` / `prod_16gb` / `cpu_only`. Env override: `PERSPECTIVE_HOST_PROFILE`. |
 | `preflight` | `true` | Runs a one-shot driver/torch/CUDA probe at launch and logs a `preflight:` block. Set to `false` (or env `PERSPECTIVE_PREFLIGHT_SKIP=1`) to bypass. |
 | `preflight_strict` | `false` | When the probe reports a hard error, abort launch instead of continuing with a warning. |
 

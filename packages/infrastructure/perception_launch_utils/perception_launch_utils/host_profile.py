@@ -5,9 +5,12 @@
 The dev box (RTX 3070 Ti / 8 GB) and the execution PC (RTX A4000+ /
 16 GB+) are the same workspace running the same code, but at different
 model sizes / batch sizes. This module loads ``host_profile.yaml``
-files from ``perception_bringup/config/host_profiles/`` and exposes
+files from ``perception_launch_utils/host_profiles/`` and exposes
 their ``overrides`` map so launch files can splat them on top of each
-node's default parameter file.
+node's default parameter file. The YAMLs ship with this package (not
+``perception_bringup``) so Phase 4 Docker containers — which only
+install ``perception_launch_utils`` plus their own node — can resolve
+profiles without pulling in the full bringup package.
 
 It also provides ``auto_select_profile`` which picks a sensible
 profile from ``nvidia-smi`` total VRAM. Anti-pattern (g) in CLAUDE.md
@@ -30,8 +33,8 @@ from .paths import share_file
 
 
 _PROFILE_ENV = 'PERSPECTIVE_HOST_PROFILE'
-_PROFILE_DIR_PKG = 'perception_bringup'
-_PROFILE_DIR_REL = 'config/host_profiles'
+_PROFILE_DIR_PKG = 'perception_launch_utils'
+_PROFILE_DIR_REL = 'host_profiles'
 _VALID_PROFILES = ('dev_8gb', 'prod_16gb', 'cpu_only')
 # Boundary used by auto-select: GPUs reporting ≥ this many MiB land on
 # prod_16gb, otherwise dev_8gb. 12000 ≈ "anything bigger than the 3070
@@ -56,7 +59,7 @@ class HostProfile:
 
 
 def _profile_path(name: str) -> str:
-    """Resolve ``share/perception_bringup/config/host_profiles/<name>.yaml``."""
+    """Resolve ``share/perception_launch_utils/host_profiles/<name>.yaml``."""
     return share_file(_PROFILE_DIR_PKG, _PROFILE_DIR_REL, f'{name}.yaml')
 
 
