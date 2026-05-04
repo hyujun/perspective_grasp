@@ -39,10 +39,10 @@ pose-axis triads, mode + camera tag) for **one** selected camera on
 
 | Kind       | Topic template                                   | QoS                    | Source          |
 |------------|--------------------------------------------------|------------------------|-----------------|
-| Per-cam    | `/{ns}/{image_topic_suffix}` (default `camera/color/image_raw`) | sensor / BEST_EFFORT   | RealSense driver |
+| Per-cam    | `/{ns}/{image_topic_suffix}` (default `camera/color/image_raw`) | RELIABLE (matches `realsense2_camera 4.57.7`; pass `image_qos:=sensor_data` for BEST_EFFORT drivers) | RealSense driver |
 | Per-cam    | `/{ns}/{detection_topic_suffix}` (default `yolo/detections`)    | sensor / BEST_EFFORT   | `yolo_byte_tracker` |
 | Per-cam    | `/{ns}/{sam2_masks_suffix}` (default `sam2/masks`)              | sensor / BEST_EFFORT   | `sam2_instance_segmentor` |
-| Per-cam    | `/{ns}/{camera_info_suffix}` (default `camera/color/camera_info`) | sensor / BEST_EFFORT | RealSense driver |
+| Per-cam    | `/{ns}/{camera_info_suffix}` (default `camera/color/camera_info`) | RELIABLE (RealSense driver) | RealSense driver |
 | Global     | `/smoother/smoothed_poses`                       | sensor / BEST_EFFORT   | `pose_graph_smoother` |
 | Global     | `/meta_controller/active_pipeline`               | reliable / depth 1     | `perception_meta_controller` |
 | Output     | `/debug/image`                                   | sensor / BEST_EFFORT   | **this node**   |
@@ -144,8 +144,11 @@ ros2 topic list | grep image_raw                   # is the driver publishing?
 - If topic list is empty → RealSense / camera driver not running. See
   [running.md § Camera drivers](running.md#camera-drivers).
 - If topic exists but `hz` reports `no new messages`:
-  - Check QoS mismatch: `ros2 topic info -v <topic>`. Publisher must be
-    `BEST_EFFORT` for the node to receive it (or change both to `RELIABLE`).
+  - Check QoS mismatch: `ros2 topic info -v <topic>`. RealSense 4.57.7 publishes
+    `RELIABLE`, so the YOLO tracker and visualizer subscribe RELIABLE by default
+    (`image_qos:=reliable`). If you swap to a `SensorDataQoS` (BEST_EFFORT)
+    driver, pass `image_qos:=sensor_data` to the bringup / phase 1 / tracker
+    launches so publisher and subscriber agree.
   - Check namespace: launch-time `camera_namespaces` vs actual topic prefix.
 
 ### 4.3 Image shows, but no bounding boxes
@@ -191,9 +194,9 @@ ros2 topic hz /merged/points
 ros2 topic echo --once /merged/points --field header.frame_id
 ```
 
-- `frame_id` must be `ur5e_base_link` (or whatever `base_frame` in the camera
-  config is). If it's a camera frame, the merge TF static transforms are
-  missing — rerun calibration / check `static_tf` blocks in
+- `frame_id` must equal `base_frame` from `camera_config.yaml` (default
+  `base`). If it's a camera frame instead, the merge TF static transforms
+  are missing — rerun calibration / check `static_tf` blocks in
   `camera_config.yaml`.
 
 ### 4.7 Cross-camera association drops objects
@@ -216,9 +219,9 @@ All Phase 4 launches (`sam2`, `foundationpose`, `cosypose`, `megapose`,
 `UNCONFIGURED`:
 
 ```bash
-# Lifecycle state check
-ros2 lifecycle get /foundationpose_tracker
-ros2 lifecycle nodes                         # all lifecycle nodes in the graph
+# Lifecycle state check (fan-out namespaces the node under each camera)
+ros2 lifecycle nodes                                 # all lifecycle nodes in the graph
+ros2 lifecycle get /cam0/foundationpose_tracker      # or /foundationpose_tracker for 1-cam (root namespace)
 
 # If Docker-hosted, tail the entrypoint log to see the configure error
 docker compose -f docker/docker-compose.yml logs -f foundationpose
@@ -228,9 +231,10 @@ Most common causes:
 - **Weights / meshes missing** — the `on_configure` callback fails when the
   model directory mount is empty. Confirm the host path (`$FOUNDATIONPOSE_WEIGHTS`
   etc.) exists and the expected files are there. See
-  [running.md § Phase 4](running.md#phase-4-ml-nodes-docker).
+  [model_assets.md](model_assets.md) for per-service layouts and
+  [running.md § Phase 4](running.md#phase-4-ml-nodes-docker) for compose usage.
 - **`autostart:=false` was set** explicitly — drive it manually:
-  `ros2 lifecycle set /foundationpose_tracker configure` then `activate`.
+  `ros2 lifecycle set /cam0/foundationpose_tracker configure` then `activate` (replace `cam0` with the actual camera namespace, or drop the prefix for 1-cam root).
 
 ### 4.9 Phase 4 node runs but host doesn't see its topics
 
@@ -420,13 +424,14 @@ ros2 param get  /perception_debug_visualizer camera_namespaces
 ros2 param get  /perception_debug_visualizer active_camera_index
 
 # Lifecycle (Phase 3 smoother + all Phase 4 ML nodes)
+# Phase 4 nodes are namespaced per camera under fan-out (e.g. /cam0/foundationpose_tracker).
 ros2 lifecycle nodes
-ros2 lifecycle get /foundationpose_tracker
+ros2 lifecycle get /cam0/foundationpose_tracker
 ros2 lifecycle set /pose_graph_smoother activate
 
 # TF
 ros2 run tf2_tools view_frames
-ros2 run tf2_ros tf2_echo ur5e_base_link cam0_color_optical_frame
+ros2 run tf2_ros tf2_echo base cam0_color_optical_frame   # 'base' = default base_frame in camera_config*.yaml
 
 # Docker-hosted Phase 4 nodes
 docker compose -f docker/docker-compose.yml ps

@@ -51,7 +51,7 @@ The script is idempotent and refuses to run as root. It covers 8 steps:
 2. ROS 2 Jazzy Desktop, registered via the canonical `ros2-apt-source` deb (handles upstream key rotations automatically) + rosdep
 3. ROS 2 apt packages + system C++ libs (rclcpp/rclpy, **rmw-cyclonedds-cpp**, tf2, cv_bridge, image_transport, PCL, Eigen3, OpenCV, Ceres, openmpi)
 4. C++ libs from source (TEASER++, manif, GTSAM 4.2.0)
-5. Host Python venv at `${ROS2_WS}/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt) (pip runs with `--no-user` to keep transitive deps inside the venv — see memory note `pip_venv_shadow_trap`). **`torch` and `torchvision` are pinned; the cuXXX wheel index is auto-detected from `nvidia-smi`** (override with `PERSPECTIVE_TORCH_CUDA` — see the matrix below).
+5. Host Python venv at `${ROS2_WS}/.venv` via [`scripts/requirements-host.txt`](../scripts/requirements-host.txt). The venv is created with `--system-site-packages` so ROS 2 bindings (`rclpy`, `cv_bridge`, apt's `numpy`) remain visible; pip installs land *inside* `${ROS2_WS}/.venv` (never `~/.local` — see memory note `pip_venv_shadow_trap`). **`torch` and `torchvision` are pinned; the cuXXX wheel index is auto-detected from `nvidia-smi`** (override with `PERSPECTIVE_TORCH_CUDA` — see the matrix below).
 6. Docker + `nvidia-container-toolkit`
 7. Model-weights directory scaffold under `models/<service>/`
 
@@ -118,7 +118,7 @@ It installs librealsense2 from Intel's apt repo (without the DKMS module — uns
 
 ## Python venv — layered, not isolated
 
-Both install scripts create a Python virtual environment at `${ROS2_WS}/.venv` (sibling to `build/install/log`) using `python3 -m venv --system-site-packages`. The pinned deps come from [`scripts/requirements-host.txt`](../scripts/requirements-host.txt) — currently `numpy<2` and `ultralytics`.
+Both install scripts create a Python virtual environment at `${ROS2_WS}/.venv` (sibling to `build/install/log`) using `python3 -m venv --system-site-packages`. Pinned deps come from [`scripts/requirements-host.txt`](../scripts/requirements-host.txt): `numpy<2`, `ultralytics==8.4.40`, `lap>=0.5.12` (so ByteTrack doesn't auto-pip-install it on first track), and `torch==2.6.0` / `torchvision==0.21.0` (cuXXX wheel index auto-detected from `nvidia-smi` — see § Picking the torch CUDA build).
 
 > **This is a layer, not an isolation boundary.** `--system-site-packages` means the venv *inherits* everything under `/usr/lib/python3/dist-packages/` (apt's rclpy / cv_bridge / numpy 1.26.4) and `~/.local/lib/python3.12/site-packages/`. The venv only adds or shadows packages on top.
 >

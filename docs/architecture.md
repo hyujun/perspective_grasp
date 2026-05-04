@@ -115,8 +115,13 @@ Profiles never branch code (Invariant I9). The runtime helper `resolve_torch_dev
 |-------|------|----------|
 | `/{ns}/yolo/detections` | `DetectionArray` | `yolo_pcl_cpp_tracker` |
 | `/{ns}/yolo_tracker/raw_poses` | `PoseWithMetaArray` | `yolo_pcl_cpp_tracker` |
+| `/{ns}/sam2/masks` | `SegmentationArray` | `sam2_instance_segmentor` (fan-out) |
+| `/{ns}/foundationpose/raw_poses` | `PoseWithMetaArray` | `isaac_foundationpose_tracker` (fan-out) |
+| `/{ns}/cosypose/optimized_poses` | `PoseWithMetaArray` | `cosypose_scene_optimizer` (fan-out) |
+| `/{ns}/megapose/raw_poses` | `PoseWithMetaArray` | `megapose_ros2_wrapper` (fan-out) |
+| `/{ns}/bundlesdf/raw_poses` | `PoseWithMetaArray` | `bundlesdf_unknown_tracker` (fan-out) |
 
-`{ns}` is `cam0`, `cam1`, `cam2` in multi-camera launches.
+`{ns}` is `cam0`, `cam1`, `cam2` in multi-camera launches and the empty string (root namespace) for `camera_config_1cam.yaml` — the per-camera topics collapse to `/yolo/detections`, `/sam2/masks`, etc. in that case. CosyPose's `analyze_scene` action server is also per-camera-namespaced under fan-out.
 
 ### Cross-camera fusion
 
@@ -131,14 +136,12 @@ Profiles never branch code (Invariant I9). The runtime helper `resolve_torch_dev
 |-------|------|----------|
 | `/pose_filter/filtered_poses` | `PoseWithMetaArray` | `pose_filter_cpp` |
 | `/smoother/smoothed_poses` | `PoseWithMetaArray` | `pose_graph_smoother` |
-| `/foundationpose/raw_poses` | `PoseWithMetaArray` | `isaac_foundationpose_tracker` |
-| `/cosypose/optimized_poses` | `PoseWithMetaArray` | `cosypose_scene_optimizer` |
-| `/megapose/raw_poses` | `PoseWithMetaArray` | `megapose_ros2_wrapper` |
-| `/bundlesdf/raw_poses` | `PoseWithMetaArray` | `bundlesdf_unknown_tracker` |
-| `/sam2/masks` | `SegmentationArray` | `sam2_instance_segmentor` |
 | `/meta_controller/active_pipeline` | `PipelineStatus` | `perception_meta_controller` |
+| `/debug/image` | `Image` (BGR8) | `perception_debug_visualizer` |
 
 ## TF2 frame convention
+
+The vision stack uses **robot-agnostic frame names** (`base`, `tool0`) so the same configs run against any controller that bridges its own kinematic root (e.g. `ur5e_base_link`) to `base` via a static TF outside this repo. See anti-pattern (l) in CLAUDE.md.
 
 ### Single camera
 
@@ -147,10 +150,12 @@ Profiles never branch code (Invariant I9). The runtime helper `resolve_torch_dev
 
 ### Multi-camera
 
-- Per-camera: `cam{N}_color_optical_frame` (N ∈ {0, 1, 2})
-- All filtered poses published in `ur5e_base_link`
-- Static TF: `ur5e_base_link` → `cam{N}_link` (produced by `multi_camera_calibration`)
+- `base_frame` from `camera_config*.yaml` (default: `base`)
+- Per-camera optical: `cam{N}_color_optical_frame` (N ∈ {0, 1, 2})
+- All filtered poses published in `base_frame`
+- Static TF: `base` → `cam{N}_link` (produced by `multi_camera_calibration`)
 - Dynamic: `cam{N}_link` → `cam{N}_color_optical_frame` (from the camera driver)
+- The downstream controller workspace owns the static TF from its own root (e.g. `ur5e_base_link`) to `base`.
 
 ## Pipeline modes
 
@@ -164,9 +169,9 @@ Switched via `perception_meta_controller` (`SetMode` service). See [running.md](
 
 ## QoS
 
-- **Control-path topics** (poses, TF, internal `yolo/detections` / `sam2/masks` / `pose_filter/*` / `smoother/*` publishers): `BEST_EFFORT` + depth 1 (Invariant I7). A stale sample is worthless; dropping is preferable to queueing.
-- **Camera-image input subscription**: matches the camera driver. `ros-jazzy-realsense2-camera 4.57.7` publishes `RELIABLE`, so the YOLO tracker defaults `image_qos:=reliable`. Pass `image_qos:=sensor_data` to the bringup / phase 1 / tracker launches when the driver uses `SensorDataQoS` (BEST_EFFORT). This is a publisher↔subscriber boundary, separate from the internal control-path policy.
-- **Diagnostic / debug topics**: default reliable QoS.
+- **Control-path topics** (poses, TF, internal `yolo/detections` / `sam2/masks` / `pose_filter/*` / `smoother/*` publishers, and `/debug/image`): `BEST_EFFORT` + depth 1 (Invariant I7). A stale sample is worthless; dropping is preferable to queueing.
+- **Camera-image input subscription**: matches the camera driver. `ros-jazzy-realsense2-camera 4.57.7` publishes `RELIABLE`, so the YOLO tracker and debug visualizer default `image_qos:=reliable`. Pass `image_qos:=sensor_data` to the bringup / phase 1 / tracker launches when the driver uses `SensorDataQoS` (BEST_EFFORT). This is a publisher↔subscriber boundary, separate from the internal control-path policy.
+- **Reliable-only topics**: `/meta_controller/active_pipeline` (`PipelineStatus`) — depth 1 reliable, since mode transitions must not be dropped.
 
 ## Optional dependencies
 
@@ -182,7 +187,7 @@ These have fallbacks. Packages must build and run sensibly without them.
 
 An external robot-controller workspace integrates with this repo as a downstream consumer. The two workspaces share:
 
-- **TF2 frames**: `ur5e_base_link` and related chain
+- **TF2 frames**: vision publishes in `base` / `tool0`; the controller stitches them to its own root (e.g. `ur5e_base_link`) via a static TF on its side.
 - **Action interfaces**: `PlanGrasp`, `AnalyzeScene`
 
 They do **not** share:
