@@ -37,12 +37,16 @@ rviz = share_file('perception_debug_visualizer', 'rviz', 'debug_view.rviz')
 
 ### `repo_root(anchor_pkg='perception_bringup') -> str`
 
-Absolute path to `<ws>/src/perspective_grasp`. Resolves via the anchor
-package's installed `share/` dir (walks up 4 levels). Override with
-`$PERSPECTIVE_GRASP_REPO_ROOT`. If the source folder was renamed (e.g. on
-a deployment PC) and the env var is unset, the fallback path will not
-exist and the call raises `FileNotFoundError` with a hint pointing at
-the env var — set it from `.env.live` to recover.
+Absolute path to the repo source tree. Resolves via the anchor package's
+installed `share/` dir: walks up 4 levels to `<ws>`, scans `<ws>/src` for
+a `package.xml` whose `<name>` matches the anchor, then walks up from
+that source dir to the first ancestor containing a `packages/` directory
+— that ancestor is the repo root. The repo folder name itself is **not
+hardcoded**, so the repo can be cloned under any name on a deployment
+PC. Override with `$PERSPECTIVE_GRASP_REPO_ROOT` to skip the search
+entirely (useful when the source tree lives outside `<ws>/src`). If
+neither path resolves, raises `FileNotFoundError` with a hint pointing
+at the env var — set it from `.env.live` to recover.
 
 ### `workspace_models_dir(anchor_pkg='perception_bringup') -> str`
 

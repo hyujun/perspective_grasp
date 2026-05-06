@@ -18,6 +18,34 @@ from perception_launch_utils import (
     workspace_models_dir,
     workspace_runtime_outputs_dir,
 )
+from perception_launch_utils.paths import _resolve_repo_root_from_workspace
+
+
+@pytest.fixture(autouse=True)
+def _clear_repo_root_cache():
+    """Each test gets a fresh fallback resolution — the lru_cache on the
+    workspace search would otherwise leak state between tests."""
+    _resolve_repo_root_from_workspace.cache_clear()
+    yield
+    _resolve_repo_root_from_workspace.cache_clear()
+
+
+def _make_fake_install(ws, anchor_pkg, repo_dir, sub_path=('packages',)):
+    """Create a colcon-shaped install layout plus a source tree containing
+    ``anchor_pkg``'s package.xml at ``<repo_dir>/<sub_path>/<anchor_pkg>``.
+
+    Returns the share dir path that ``get_package_share_directory`` should
+    mock to.
+    """
+    src_pkg = repo_dir.joinpath(*sub_path, anchor_pkg)
+    src_pkg.mkdir(parents=True)
+    (src_pkg / 'package.xml').write_text(
+        f'<?xml version="1.0"?><package format="3"><name>{anchor_pkg}</name>'
+        '</package>'
+    )
+    share = ws / 'install' / anchor_pkg / 'share' / anchor_pkg
+    share.mkdir(parents=True)
+    return str(share)
 
 
 @patch('perception_launch_utils.paths.get_package_share_directory')
@@ -78,29 +106,70 @@ def test_repo_root_env_override():
 
 
 @patch('perception_launch_utils.paths.get_package_share_directory')
-def test_repo_root_walks_up_from_share(mock_share, tmp_path, monkeypatch):
+def test_repo_root_resolves_via_package_xml(mock_share, tmp_path, monkeypatch):
     monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
     ws = tmp_path / 'ws'
     repo = ws / 'src' / 'perspective_grasp'
-    repo.mkdir(parents=True)
-    mock_share.return_value = str(
-        ws / 'install' / 'perception_bringup' / 'share' / 'perception_bringup')
+    mock_share.return_value = _make_fake_install(ws, 'perception_bringup', repo)
     assert repo_root() == str(repo)
 
 
 @patch('perception_launch_utils.paths.get_package_share_directory')
-def test_repo_root_raises_when_fallback_missing(mock_share, tmp_path,
-                                                monkeypatch):
-    """If the source folder was renamed, fallback should raise with a hint
-    pointing at the env-var override."""
+def test_repo_root_works_with_renamed_folder(mock_share, tmp_path, monkeypatch):
+    """Folder name need not be 'perspective_grasp' anymore."""
     monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
     ws = tmp_path / 'ws'
-    # Simulate exec PC where source was renamed: install tree exists but
-    # ws/src/perspective_grasp does not.
+    repo = ws / 'src' / 'totally_different_name'
+    mock_share.return_value = _make_fake_install(ws, 'perception_bringup', repo)
+    assert repo_root() == str(repo)
+
+
+@patch('perception_launch_utils.paths.get_package_share_directory')
+def test_repo_root_walks_up_through_nested_groups(
+        mock_share, tmp_path, monkeypatch):
+    """Anchor's package.xml may sit several levels under packages/<group>/."""
+    monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
+    ws = tmp_path / 'ws'
+    repo = ws / 'src' / 'my_repo'
+    mock_share.return_value = _make_fake_install(
+        ws, 'perception_bringup', repo, sub_path=('packages', 'bringup'))
+    assert repo_root() == str(repo)
+
+
+@patch('perception_launch_utils.paths.get_package_share_directory')
+def test_repo_root_raises_when_anchor_missing(mock_share, tmp_path,
+                                              monkeypatch):
+    """If no matching package.xml exists under <ws>/src, raise with the
+    env-var hint."""
+    monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
+    ws = tmp_path / 'ws'
+    # Install tree exists; src tree is empty (simulates a deployment box
+    # where the source was wiped or relocated outside the workspace).
     (ws / 'install' / 'perception_bringup' / 'share' /
      'perception_bringup').mkdir(parents=True)
+    (ws / 'src').mkdir(parents=True)
     mock_share.return_value = str(
         ws / 'install' / 'perception_bringup' / 'share' / 'perception_bringup')
+    with pytest.raises(FileNotFoundError, match='PERSPECTIVE_GRASP_REPO_ROOT'):
+        repo_root()
+
+
+@patch('perception_launch_utils.paths.get_package_share_directory')
+def test_repo_root_raises_when_no_packages_marker(
+        mock_share, tmp_path, monkeypatch):
+    """Anchor exists but no ancestor has a `packages/` marker — bail out."""
+    monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
+    ws = tmp_path / 'ws'
+    # Place package.xml directly under src/, without the packages/ marker.
+    src_pkg = ws / 'src' / 'perception_bringup'
+    src_pkg.mkdir(parents=True)
+    (src_pkg / 'package.xml').write_text(
+        '<?xml version="1.0"?><package format="3">'
+        '<name>perception_bringup</name></package>'
+    )
+    share = ws / 'install' / 'perception_bringup' / 'share' / 'perception_bringup'
+    share.mkdir(parents=True)
+    mock_share.return_value = str(share)
     with pytest.raises(FileNotFoundError, match='PERSPECTIVE_GRASP_REPO_ROOT'):
         repo_root()
 
@@ -117,9 +186,7 @@ def test_workspace_models_dir_default(mock_share, tmp_path, monkeypatch):
     monkeypatch.delenv('PERSPECTIVE_GRASP_MODELS_DIR', raising=False)
     ws = tmp_path / 'ws'
     repo = ws / 'src' / 'perspective_grasp'
-    repo.mkdir(parents=True)
-    mock_share.return_value = str(
-        ws / 'install' / 'perception_bringup' / 'share' / 'perception_bringup')
+    mock_share.return_value = _make_fake_install(ws, 'perception_bringup', repo)
     assert workspace_models_dir() == str(repo / 'models')
 
 
@@ -149,13 +216,9 @@ def test_workspace_runtime_outputs_dir_skip_create(tmp_path, monkeypatch):
 @patch('perception_launch_utils.paths.get_package_share_directory')
 def test_workspace_runtime_outputs_dir_default_layout(
         mock_share, tmp_path, monkeypatch):
-    # Build a fake colcon install layout under tmp_path so the walk-up resolves
-    # to a writable repo root.
     ws = tmp_path / 'ws'
     repo = ws / 'src' / 'perspective_grasp'
-    repo.mkdir(parents=True)
-    mock_share.return_value = str(
-        ws / 'install' / 'perception_bringup' / 'share' / 'perception_bringup')
+    mock_share.return_value = _make_fake_install(ws, 'perception_bringup', repo)
     monkeypatch.delenv('PERSPECTIVE_GRASP_REPO_ROOT', raising=False)
     monkeypatch.delenv('PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR', raising=False)
     out = workspace_runtime_outputs_dir('calibration')

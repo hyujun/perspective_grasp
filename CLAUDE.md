@@ -240,14 +240,18 @@ p. **Host torch CUDA build mismatched to NVIDIA driver** — Symptom: `yolo_byte
    CUDA tensor at load() and falls back to CPU with a single WARN; (3) `host_profile:=cpu_only`
    forces every Phase 4 backend onto its mock for headless / CI runs.
 
-q. **Source folder renamed on exec PC + `PERSPECTIVE_GRASP_REPO_ROOT` unset** — Symptom:
-   launch fails with `FileNotFoundError: perception_launch_utils.repo_root() fallback path
-   does not exist: '<ws>/src/perspective_grasp'`. Cause: the dev PC's `paths.py` fallback
-   assumes `<ws>/src/perspective_grasp` literally; exec PC may host the source at a
-   different folder name. Detection: the error message itself names the env var. Recovery:
-   set `PERSPECTIVE_GRASP_REPO_ROOT` in `.env.live` (or shell) to the actual source path —
-   `repo_root()` returns the env var verbatim when present, so the literal folder name
-   becomes irrelevant. Same trick covers `PERSPECTIVE_GRASP_MODELS_DIR` /
+q. **Source tree not found by `repo_root()`** — Symptom: launch fails with
+   `FileNotFoundError: perception_launch_utils.repo_root() could not locate the
+   perspective_grasp source tree under '<ws>/src'`. Cause: the source tree lives outside
+   `<ws>/src` (e.g. mounted from a sibling path on a deployment PC), or `<ws>/src` does
+   not contain a `package.xml` whose `<name>` matches the anchor (`perception_bringup`),
+   or no ancestor of that `package.xml` has a `packages/` marker directory. The folder
+   name itself is **no longer** load-bearing — the resolver scans by `package.xml`
+   contents, not by name, so renaming the repo folder works out of the box. Detection:
+   the error message itself names the env var. Recovery: set
+   `PERSPECTIVE_GRASP_REPO_ROOT` in `.env.live` (or shell) to the actual source path —
+   `repo_root()` returns the env var verbatim when present, so the search is skipped
+   entirely. Same trick covers `PERSPECTIVE_GRASP_MODELS_DIR` /
    `PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR` if those should not be derived from the repo
    root.
 

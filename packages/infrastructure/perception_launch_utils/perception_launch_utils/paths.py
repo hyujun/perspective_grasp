@@ -9,20 +9,71 @@ Collapses the repeated 5-line ``os.path.join(get_package_share_directory(...),
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from typing import Optional
+from xml.etree import ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument
 
-# Workspace layout: <ws>/install/<pkg>/share/<pkg> → walk up 4 levels → <ws>.
-# The repo lives at <ws>/src/perspective_grasp.
-_REPO_REL_FROM_WS = ('src', 'perspective_grasp')
 _MODELS_SUBDIR = 'models'
 _RUNTIME_OUTPUTS_SUBDIR = 'runtime_outputs'
+# Marker directory that identifies the repo root (``<repo>/packages/`` holds
+# every ROS 2 package source). Used by the fallback resolver so the repo
+# folder name itself need not be hardcoded.
+_REPO_MARKER = 'packages'
 
 _ENV_REPO_ROOT = 'PERSPECTIVE_GRASP_REPO_ROOT'
 _ENV_MODELS_DIR = 'PERSPECTIVE_GRASP_MODELS_DIR'
 _ENV_RUNTIME_OUTPUTS_DIR = 'PERSPECTIVE_GRASP_RUNTIME_OUTPUTS_DIR'
+
+
+def _find_anchor_source_dir(ws_src: str, anchor_pkg: str) -> Optional[str]:
+    """Locate the source directory of ``anchor_pkg`` under ``<ws>/src``.
+
+    Walks the tree looking for a ``package.xml`` whose ``<name>`` element
+    matches ``anchor_pkg``. Returns the directory containing that file, or
+    ``None`` if no match is found.
+    """
+    if not os.path.isdir(ws_src):
+        return None
+    for dirpath, _dirnames, filenames in os.walk(ws_src):
+        if 'package.xml' not in filenames:
+            continue
+        try:
+            tree = ET.parse(os.path.join(dirpath, 'package.xml'))
+        except ET.ParseError:
+            continue
+        name_el = tree.getroot().find('name')
+        if name_el is not None and (name_el.text or '').strip() == anchor_pkg:
+            return dirpath
+    return None
+
+
+def _ascend_to_repo_root(start: str) -> Optional[str]:
+    """Walk up from ``start`` until a directory contains the repo marker.
+
+    The marker is a child directory named ``packages/`` (where every ROS 2
+    package source lives). Returns the first matching ancestor, or ``None``
+    if the filesystem root is reached first.
+    """
+    current = os.path.abspath(start)
+    while True:
+        if os.path.isdir(os.path.join(current, _REPO_MARKER)):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
+
+
+@lru_cache(maxsize=None)
+def _resolve_repo_root_from_workspace(ws_root: str, anchor_pkg: str) -> Optional[str]:
+    """Cache wrapper for the source-tree search."""
+    anchor_src = _find_anchor_source_dir(os.path.join(ws_root, 'src'), anchor_pkg)
+    if anchor_src is None:
+        return None
+    return _ascend_to_repo_root(anchor_src)
 
 
 def repo_root(anchor_pkg: str = 'perception_bringup') -> str:
@@ -33,10 +84,14 @@ def repo_root(anchor_pkg: str = 'perception_bringup') -> str:
        caller takes responsibility).
     2. Walk up 4 levels from ``share/<anchor_pkg>`` (the standard colcon
        ``install/<pkg>/share/<pkg>`` layout) to the colcon workspace, then
-       descend into ``src/perspective_grasp``. The result is validated;
-       if the directory does not exist, raise with a hint to set the env
-       var (covers the case where the source folder was renamed on a
-       deployment PC).
+       locate ``anchor_pkg``'s source by scanning ``<ws>/src`` for a
+       ``package.xml`` whose ``<name>`` matches. From that source dir, walk
+       up to the first ancestor that contains a ``packages/`` directory —
+       that ancestor is the repo root. The repo folder name is therefore
+       not hardcoded and may be renamed freely on deployment hosts.
+
+    Raises ``FileNotFoundError`` (with the env-var hint) when neither path
+    yields a valid directory.
 
     The anchor package must be installed (i.e., ``colcon build`` ran for it).
     Defaults to ``perception_bringup`` because every system launch already
@@ -47,15 +102,17 @@ def repo_root(anchor_pkg: str = 'perception_bringup') -> str:
         return env
     share = get_package_share_directory(anchor_pkg)
     ws_root = os.path.abspath(os.path.join(share, '..', '..', '..', '..'))
-    fallback = os.path.join(ws_root, *_REPO_REL_FROM_WS)
-    if not os.path.isdir(fallback):
+    resolved = _resolve_repo_root_from_workspace(ws_root, anchor_pkg)
+    if resolved is None or not os.path.isdir(resolved):
         raise FileNotFoundError(
-            f"perception_launch_utils.repo_root() fallback path does not exist: "
-            f"{fallback!r}. The source folder may have been renamed from "
-            f"{_REPO_REL_FROM_WS[-1]!r}. Set ${_ENV_REPO_ROOT} to the actual "
-            f"source tree path (e.g. via .env.live)."
+            f"perception_launch_utils.repo_root() could not locate the "
+            f"perspective_grasp source tree under {os.path.join(ws_root, 'src')!r}. "
+            f"Searched for package.xml of {anchor_pkg!r} and an ancestor "
+            f"containing a {_REPO_MARKER!r}/ directory. "
+            f"Set ${_ENV_REPO_ROOT} to the actual source tree path "
+            f"(e.g. via .env.live)."
         )
-    return fallback
+    return resolved
 
 
 def workspace_models_dir(anchor_pkg: str = 'perception_bringup') -> str:
